@@ -5,6 +5,13 @@ from typing import List, Dict, Tuple
 import numpy as np
 import streamlit as st
 
+# ===== DEBUG: INDEX VAR MI? =====
+st.write(
+    "✅ INDEX MODU ÇALIŞIYOR:",
+    os.path.exists("index/embeddings.npy"),
+    os.path.exists("index/chunks.jsonl"),
+)
+
 APP_TITLE = "Cebimde Müşavir – Profesyonel Mevzuat Analizi"
 INDEX_DIR = "index"
 CHUNKS_PATH = os.path.join(INDEX_DIR, "chunks.jsonl")
@@ -74,6 +81,9 @@ meta = load_meta()
 chunks = load_chunks()
 vecs = load_embeddings()
 
+# ===== DEBUG: META GÖSTER =====
+st.write("META:", meta)
+
 if not meta or not chunks or vecs.size == 0:
     st.error(
         "Index bulunamadı. Repo kökünde `index/` klasörü olmalı.\n\n"
@@ -95,6 +105,7 @@ query = st.text_area(
     height=140,
     placeholder="Örn: Kira geliri istisnası şartları, beyan sınırı ve tahsilat esasları nedir?"
 )
+
 run = st.button("Ara", width="stretch")
 
 if run:
