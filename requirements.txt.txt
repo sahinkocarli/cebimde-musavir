@@ -1,0 +1,7 @@
+streamlit
+sentence-transformers
+numpy
+pypdf
+pandas
+plotly
+fpdf
