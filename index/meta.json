@@ -1,0 +1,5 @@
+{
+  "model": "sentence-transformers/all-MiniLM-L6-v2",
+  "pdf_count": 15,
+  "chunk_count": 601
+}
