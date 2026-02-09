@@ -1,4 +1,4 @@
-﻿streamlit==1.54.0
+streamlit==1.54.0
 numpy
 pypdf
 scikit-learn
