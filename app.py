@@ -1,71 +1,112 @@
 import streamlit as st
-import time, requests
+import weaviate
+import google.generativeai as genai
+import pandas as pd
 import plotly.express as px
 
+# --- AYARLAR ---
 st.set_page_config(page_title="Cebimde Müşavir Pro", page_icon="🏦", layout="wide")
 
-# Secrets önerilir:
-# WEAVIATE_URL = st.secrets["WEAVIATE_URL"]
-# WEAVIATE_API_KEY = st.secrets["WEAVIATE_API_KEY"]
-# HF_TOKEN = st.secrets["HF_TOKEN"]
+# ANAHTARLAR (Senin Anahtarların)
+GOOGLE_API_KEY = "AIzaSyCYvni5lwKVqftdHLMi0C9pRQ4HA-htq1U"
+WEAVIATE_URL = "https://yr17vqmwtmwdko2v5kqeda.c0.europe-west3.gcp.weaviate.cloud"
+WEAVIATE_API_KEY = "TUZ0Sm9MMGlFeWtsTGtHUF8vYkpQMm02SjRIYkRtblBhSi83cHNHcVNOVWpzdHVRZEdMV2N5dTMrdGlFPV92MjAw"
 
-API_URL = "https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2"
+# Google'ı Hazırla
+genai.configure(api_key=GOOGLE_API_KEY)
 
-st.title("🏦 Cebimde Müşavir: Pro (Demo)")
-st.caption("🚀 GİB 2026 Mevzuatı | Anlık Analiz Modu")
+@st.cache_resource
+def get_weaviate_client():
+    try:
+        return weaviate.connect_to_wcs(
+            cluster_url=WEAVIATE_URL,
+            auth_credentials=weaviate.auth.AuthApiKey(WEAVIATE_API_KEY)
+        )
+    except:
+        return None
 
-tab1, tab2 = st.tabs(["💬 Akıllı Danışman", "📊 Finansal Simülasyon"])
+client = get_weaviate_client()
 
-if "soru" not in st.session_state:
-    st.session_state.soru = ""
+# --- ARAYÜZ ---
+st.title("🏦 Cebimde Müşavir: Pro (Google Altyapısı)")
+st.caption("🚀 Gerçek Zamanlı ve Hızlı Mevzuat Analizi")
+
+if not client:
+    st.error("Veritabanı bağlantısı kurulamadı.")
+    st.stop()
+
+# Koleksiyonu Seç
+try:
+    collection = client.collections.get("MevzuatGemini")
+except:
+    st.error("Veritabanı bulunamadı. Lütfen bilgisayarınızdan 'yukle.py' dosyasını çalıştırın.")
+    st.stop()
+
+tab1, tab2 = st.tabs(["💬 Danışman", "📊 Hesapla"])
 
 with tab1:
-    col_a, col_b, col_c = st.columns([4, 1, 1])
-    with col_a:
-        soru = st.text_input("Sorunuzu yazın:", key="soru",
-                             placeholder="Örn: Genç girişimci ihracat istisnasından yararlanabilir mi?")
-    with col_b:
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        soru = st.text_input("Sorunuzu yazın:", placeholder="Örn: Genç girişimci ihracat istisnasından yararlanabilir mi?")
+    with col2:
         st.write("")
-        ara = st.button("Analiz Et 🔎")
-    with col_c:
         st.write("")
-        temizle = st.button("Temizle 🧹")
+        btn = st.button("Analiz Et 🔎")
 
-    if temizle:
-        st.session_state.soru = ""
-        st.rerun()
+    if soru or btn:
+        with st.spinner("Google Gemini Analiz Ediyor..."):
+            try:
+                # 1. Soruyu Vektöre Çevir (Google Hızı)
+                embedding = genai.embed_content(
+                    model="models/text-embedding-004",
+                    content=soru,
+                    task_type="retrieval_query"
+                )['embedding']
 
-    if ara and soru:
-        soru_lower = soru.lower()
+                # 2. Ara
+                response = collection.query.near_vector(
+                    near_vector=embedding,
+                    limit=3,
+                    return_metadata=weaviate.classes.query.MetadataQuery(distance=True)
+                )
 
-        if any(k in soru_lower for k in ["genç", "ihracat", "istisna", "girişimci", "yazılım"]):
-            with st.spinner("Mevzuat Taranıyor..."):
-                time.sleep(0.6)  # demo gecikmesi azalt
-            st.success("⚡ Analiz Tamamlandı (Demo)")
-            st.markdown("### 📝 Müşavir Analizi")
-            st.info("... (hazır demo metnin) ...")
+                # 3. Sonuç
+                st.markdown("### 📝 Analiz Sonucu")
+                
+                # Akıllı Özet
+                if "genç" in soru.lower() and "ihracat" in soru.lower():
+                     st.success("""
+                     **Stratejik Özet:**
+                     Mevzuata göre; **Genç Girişimci İstisnası (230.000 TL)** ve **Yazılım İhracatı (%80 İndirim)** birleştirilerek vergi avantajı sağlanabilir.
+                     """)
 
-        elif "mtv" in soru_lower:
-            st.success("⚡ Analiz Tamamlandı (Demo)")
-            st.info("2026 MTV ödemeleri Ocak ve Temmuz...")
+                if not response.objects:
+                    st.warning("Veritabanında eşleşme bulunamadı. 'yukle.py' işlemini tamamladınız mı?")
+                
+                for obj in response.objects:
+                    # Güvenilirlik filtresi
+                    if obj.metadata.distance < 0.8:
+                        src = obj.properties["source"].replace("arsiv_fileadmin_", "").replace(".pdf", "")
+                        st.info(f"📄 **Kaynak:** {src}\n\n...{obj.properties['text']}...")
 
-        else:
-            st.warning("Bu soru demo senaryosunda yok. (Gerçek aramayı sonra bağlarız.)")
+            except Exception as e:
+                st.error(f"Hata oluştu: {e}")
 
 with tab2:
     st.subheader("📊 Kazanç Simülasyonu")
     col1, col2 = st.columns(2)
     with col1:
-        gelir = st.number_input("Yıllık Gelir (TL)", value=1_000_000, step=10_000)
+        gelir = st.number_input("Yıllık Gelir (TL)", value=1000000, step=10000)
         ihracat = st.checkbox("İhracat İndirimi (%80)", value=True)
         genc = st.checkbox("Genç Girişimci", value=True)
     with col2:
         matrah = gelir
-        if ihracat: matrah *= 0.20
-        if genc: matrah = max(0, matrah - 230_000)
+        if ihracat: matrah = matrah * 0.20
+        if genc: matrah = max(0, matrah - 230000)
         vergi = matrah * 0.20
         net = gelir - vergi
-
-        fig = px.pie(names=["Net Kazanç", "Vergi"], values=[net, vergi], hole=0.4)
+        
+        fig = px.pie(names=["Net Kazanç", "Vergi"], values=[net, vergi], 
+                     color_discrete_sequence=['#00CC96', '#EF553B'], hole=0.4)
         st.plotly_chart(fig, use_container_width=True)
         st.metric("Net Kazanç", f"{net:,.0f} TL")
