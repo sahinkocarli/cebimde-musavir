@@ -1,126 +1,99 @@
 import streamlit as st
+import time
 import weaviate
 from sentence_transformers import SentenceTransformer
 import pandas as pd
 import plotly.express as px
 
-# --- AYARLAR (HIZ İÇİN BULUT BAĞLANTISI) ---
+st.set_page_config(page_title="Hız Testi Modu", page_icon="⚡", layout="wide")
+
+# --- AYARLAR ---
 WEAVIATE_URL = "https://yr17vqmwtmwdko2v5kqeda.c0.europe-west3.gcp.weaviate.cloud"
 WEAVIATE_API_KEY = "TUZ0Sm9MMGlFeWtsTGtHUF8vYkpQMm02SjRIYkRtblBhSi83cHNHcVNOVWpzdHVRZEdMV2N5dTMrdGlFPV92MjAw"
 
-st.set_page_config(page_title="Cebimde Müşavir Pro", page_icon="🏦", layout="wide")
+st.title("⚡ Sistem Hız Tanı Ekranı")
 
-# --- BAĞLANTI KURULUMU ---
-@st.cache_resource
-def setup_connections():
-    # Model sadece ilk açılışta yüklenir, sonra hafızadan gelir
-    model = SentenceTransformer('all-MiniLM-L6-v2')
-    try:
-        client = weaviate.connect_to_wcs(
-            cluster_url=WEAVIATE_URL,
-            auth_credentials=weaviate.auth.AuthApiKey(WEAVIATE_API_KEY)
-        )
-        return client, model
-    except Exception as e:
-        return None, None
+# --- ADIM 1: AI MODELİ YÜKLEME ---
+t1 = time.time()
+with st.status("🧠 1. Adım: Yapay Zeka Beyni Yükleniyor...", expanded=True) as status:
+    @st.cache_resource
+    def load_model():
+        return SentenceTransformer('all-MiniLM-L6-v2')
+    
+    model = load_model()
+    gecen_sure_model = time.time() - t1
+    status.write(f"✅ Model Yüklendi! Süre: {gecen_sure_model:.2f} saniye")
+    
+    if gecen_sure_model > 5:
+        status.update(label="⚠️ Model Yüklemesi Yavaş (Streamlit Sunucusu Yoğun)", state="error")
+    else:
+        status.update(label="🚀 Model Hazır", state="complete")
 
-client, model = setup_connections()
+# --- ADIM 2: BULUT VERİTABANI BAĞLANTISI ---
+t2 = time.time()
+with st.status("☁️ 2. Adım: Weaviate Bulutuna Bağlanılıyor...", expanded=True) as status:
+    @st.cache_resource
+    def connect_weaviate():
+        try:
+            client = weaviate.connect_to_wcs(
+                cluster_url=WEAVIATE_URL,
+                auth_credentials=weaviate.auth.AuthApiKey(WEAVIATE_API_KEY)
+            )
+            return client
+        except Exception as e:
+            return None
 
-if not client:
-    st.error("⚠️ Veritabanı bağlantısı kurulamadı. Lütfen API Key'i kontrol edin.")
-    st.stop()
+    client = connect_weaviate()
+    gecen_sure_baglanti = time.time() - t2
+    
+    if client:
+        status.write(f"✅ Buluta Bağlandı! Süre: {gecen_sure_baglanti:.2f} saniye")
+        status.update(label="🚀 Veritabanı Aktif", state="complete")
+    else:
+        status.write("❌ Bağlantı Hatası!")
+        status.update(label="Bağlantı Başarısız", state="error")
+        st.stop()
 
-# Veri koleksiyonunu seç
 collection = client.collections.get("Mevzuat")
 
-# --- ARAYÜZ TASARIMI ---
-st.title("🏦 Cebimde Müşavir: Pro")
-st.caption("🚀 Weaviate Vektör Veritabanı Gücüyle Çalışıyor | 2026 Güncel Mevzuat")
+# --- ARAYÜZ VE SORGULAMA ---
+st.divider()
 
-tab1, tab2 = st.tabs(["💬 Akıllı Danışman", "📊 Finansal Simülasyon"])
+col1, col2 = st.columns([3, 1])
+with col1:
+    soru = st.text_input("Sorgu Testi:", placeholder="Genç girişimci istisnası nedir?")
+with col2:
+    st.write("")
+    st.write("")
+    btn = st.button("Hızı Test Et ⏱️")
 
-with tab1:
-    col_a, col_b = st.columns([4, 1])
-    with col_a:
-        soru = st.text_input("Sorunuzu buraya yazın:", placeholder="Örn: Genç girişimci ihracat istisnasından yararlanabilir mi?")
-    with col_b:
-        st.write("")
-        st.write("") 
-        ara = st.button("Analiz Et 🔎")
-
-    if soru or ara:
-        # Spinner sadece milisaniyeler sürecek
-        with st.spinner("Weaviate Bulut Veritabanı Taranıyor..."):
-            
-            # 1. Soruyu vektöre (sayılara) çevir
-            soru_vector = model.encode(soru).tolist()
-            
-            # 2. Weaviate'e sor (PDF okuma YOK, direkt cevap var)
-            response = collection.query.near_vector(
-                near_vector=soru_vector,
-                limit=3,
-                return_metadata=weaviate.classes.query.MetadataQuery(distance=True)
-            )
-            
-            # --- AI ANALİZ KATMANI ---
-            st.markdown("### 📝 Müşavir Analizi")
-            
-            # Jüriyi etkileyecek hazır stratejik cevaplar
-            if any(k in soru.lower() for k in ["genç", "ihracat", "istisna", "yazılım"]):
-                st.success("""
-                **Stratejik Özet:**
-                Güncel mevzuat rehberlerine (Yayın No: 576 ve 561) göre; **Yazılım İhracatı (%80 İndirim)** ve **Genç Girişimci İstisnası (230.000 TL)** birlikte kullanılabilir. 
-                
-                **Vergi Planlaması:** 1. Önce kazancınızdan %80 ihracat indirimi düşülür.
-                2. Kalan tutardan Genç Girişimci istisnası düşülür.
-                Bu strateji ile vergi yükünüzü yasal olarak sıfıra kadar indirebilirsiniz.
-                """)
-            elif "mtv" in soru.lower():
-                st.info("""
-                **MTV Bilgilendirmesi:** 2026 yılı Motorlu Taşıtlar Vergisi için ödemeler Ocak ve Temmuz aylarında iki eşit taksit halinde yapılır.
-                """)
-            elif not response.objects:
-                 st.warning("Veritabanında bu konuyla ilgili net bir eşleşme bulunamadı.")
-            else:
-                st.info("Sorgunuzla eşleşen resmi mevzuat maddeleri aşağıda listelenmiştir:")
-
-            st.divider()
-            
-            # --- BULUNAN KAYITLAR ---
-            st.markdown("📚 **Resmi Kaynaklardan Gelen Kanıtlar:**")
-            
-            if not response.objects:
-                st.error("Veri bulunamadı. Lütfen yükleme işlemini kontrol edin.")
-            
-            for obj in response.objects:
-                dist = obj.metadata.distance
-                # Güvenilirlik Filtresi
-                if dist < 0.70:
-                    src = obj.properties["source"]
-                    txt = obj.properties["text"]
-                    
-                    # Dosya ismini temizle
-                    clean_src = src.replace("arsiv_fileadmin_", "").replace("arsiv_onceki-dokumanlar_", "").replace(".pdf", "")
-                    
-                    st.markdown(f"**📄 Kaynak Dosya: {clean_src}**")
-                    st.caption(f"...{txt}...")
-                    st.divider()
-
-with tab2:
-    st.subheader("📊 Kazanç Simülasyonu")
-    col1, col2 = st.columns(2)
-    with col1:
-        gelir = st.number_input("Yıllık Gelir (TL)", value=1000000, step=10000)
-        ihracat = st.checkbox("İhracat İndirimi (%80)", value=True)
-        genc = st.checkbox("Genç Girişimci Desteği", value=True)
-    with col2:
-        matrah = gelir
-        if ihracat: matrah = matrah * 0.20
-        if genc: matrah = max(0, matrah - 230000)
-        vergi = matrah * 0.20
-        net = gelir - vergi
-        
-        fig = px.pie(names=["Net Kazanç", "Vergi"], values=[net, vergi], 
-                     color_discrete_sequence=['#00CC96', '#EF553B'], hole=0.4)
-        st.plotly_chart(fig, use_container_width=True)
-        st.metric("Net Kazanç", f"{net:,.0f} TL")
+if soru or btn:
+    t3 = time.time()
+    
+    # VEKTÖR ÇEVİRİMİ
+    soru_vector = model.encode(soru).tolist()
+    t4 = time.time()
+    vektor_suresi = t4 - t3
+    
+    # WEAVIATE ARAMASI
+    response = collection.query.near_vector(
+        near_vector=soru_vector,
+        limit=3,
+        return_metadata=weaviate.classes.query.MetadataQuery(distance=True)
+    )
+    t5 = time.time()
+    arama_suresi = t5 - t4
+    
+    # SONUÇLARI GÖSTER
+    st.success(f"⚡ TOPLAM CEVAP SÜRESİ: {(t5-t3):.4f} Saniye")
+    
+    col_a, col_b = st.columns(2)
+    col_a.metric("Sorguyu Sayıya Çevirme", f"{vektor_suresi:.4f} sn")
+    col_b.metric("Bulutta Arama", f"{arama_suresi:.4f} sn")
+    
+    st.markdown("### 📝 Gelen Cevaplar:")
+    if any(k in soru.lower() for k in ["genç", "ihracat"]):
+         st.info("💡 (Burada Müşavirin Yorumu Görünecek - Sistem Hızlı Çalışıyor)")
+         
+    for obj in response.objects:
+        st.caption(f"📄 Kaynak: {obj.properties['source']} | Benzerlik: %{(1-obj.metadata.distance)*100:.1f}")
