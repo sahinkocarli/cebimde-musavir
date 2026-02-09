@@ -1,5 +1,4 @@
 streamlit
-weaviate-client
-google-generativeai
-pandas
-plotly
+sentence-transformers
+numpy
+pypdf
