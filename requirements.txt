@@ -5,3 +5,4 @@ pypdf
 pandas
 plotly
 fpdf
+weaviate-client
