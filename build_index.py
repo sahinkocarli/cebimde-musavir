@@ -1,16 +1,18 @@
-import os
+﻿import os
 import re
 import glob
 import json
 from typing import List, Dict, Tuple
 
-import numpy as np
 from pypdf import PdfReader
+from sklearn.feature_extraction.text import TfidfVectorizer
+from scipy import sparse
+import joblib
 
-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 INDEX_DIR = "index"
 CHUNKS_PATH = os.path.join(INDEX_DIR, "chunks.jsonl")
-EMB_PATH = os.path.join(INDEX_DIR, "embeddings.npy")
+TFIDF_MAT_PATH = os.path.join(INDEX_DIR, "tfidf_matrix.npz")
+VECTORIZER_PATH = os.path.join(INDEX_DIR, "tfidf_vectorizer.joblib")
 META_PATH = os.path.join(INDEX_DIR, "meta.json")
 
 CHUNK_MIN_LEN = 250
@@ -64,49 +66,44 @@ def main():
         print("PDF bulunamadı.")
         return
 
-    from sentence_transformers import SentenceTransformer
-    embedder = SentenceTransformer(MODEL_NAME)
-
-    records = []
-    texts = []
+    records: List[Dict] = []
+    texts: List[str] = []
 
     for pdf in pdf_files:
         pages = pdf_to_text(pdf)
         for page_no, page_text in pages:
             chunks = split_into_chunks(page_no, page_text)
             for c in chunks:
-                records.append({
-                    "pdf": os.path.basename(pdf),
-                    "page": page_no,
-                    "text": c
-                })
+                records.append({"pdf": os.path.basename(pdf), "page": page_no, "text": c})
                 texts.append(c)
-
         print(f"OK: {pdf}")
 
-    vectors = embedder.encode(
-        texts,
-        batch_size=32,
-        show_progress_bar=True,
-        normalize_embeddings=True
+    vectorizer = TfidfVectorizer(
+        lowercase=True,
+        analyzer="word",
+        ngram_range=(1, 2),
+        max_df=0.95,
+        min_df=2,
     )
+    X = vectorizer.fit_transform(texts)
 
-    np.save(EMB_PATH, np.asarray(vectors, dtype=np.float32))
+    sparse.save_npz(TFIDF_MAT_PATH, X)
+    joblib.dump(vectorizer, VECTORIZER_PATH)
 
     with open(CHUNKS_PATH, "w", encoding="utf-8") as f:
         for r in records:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
     meta = {
-        "model": MODEL_NAME,
+        "engine": "tfidf",
         "pdf_count": len(pdf_files),
-        "chunk_count": len(records)
+        "chunk_count": len(records),
+        "features": int(X.shape[1]),
     }
-
     with open(META_PATH, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
 
-    print("İndeks oluşturuldu.")
+    print("TF-IDF indeks oluşturuldu.")
 
 
 if __name__ == "__main__":

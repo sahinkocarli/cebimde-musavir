@@ -1,21 +1,17 @@
-import os
+﻿import os
 import json
 from typing import List, Dict, Tuple
 
-import numpy as np
 import streamlit as st
+import joblib
+from scipy import sparse
+from sklearn.metrics.pairwise import linear_kernel
 
-# ===== DEBUG: INDEX VAR MI? =====
-st.write(
-    "✅ INDEX MODU ÇALIŞIYOR:",
-    os.path.exists("index/embeddings.npy"),
-    os.path.exists("index/chunks.jsonl"),
-)
-
-APP_TITLE = "Cebimde Müşavir – Profesyonel Mevzuat Analizi"
+APP_TITLE = "Cebimde Müşavir – Profesyonel Mevzuat Analizi (Hızlı)"
 INDEX_DIR = "index"
 CHUNKS_PATH = os.path.join(INDEX_DIR, "chunks.jsonl")
-EMB_PATH = os.path.join(INDEX_DIR, "embeddings.npy")
+TFIDF_MAT_PATH = os.path.join(INDEX_DIR, "tfidf_matrix.npz")
+VECTORIZER_PATH = os.path.join(INDEX_DIR, "tfidf_vectorizer.joblib")
 META_PATH = os.path.join(INDEX_DIR, "meta.json")
 DEFAULT_TOPK = 8
 
@@ -42,36 +38,23 @@ def load_chunks() -> List[Dict]:
 
 
 @st.cache_resource
-def load_embeddings() -> np.ndarray:
-    if not os.path.exists(EMB_PATH):
-        return np.zeros((0, 1), dtype=np.float32)
-    vecs = np.load(EMB_PATH)
-    return np.asarray(vecs, dtype=np.float32)
-
-
-@st.cache_resource
-def get_embedder():
-    from sentence_transformers import SentenceTransformer
-    model = load_meta().get("model", "sentence-transformers/all-MiniLM-L6-v2")
-    return SentenceTransformer(model)
-
-
-def cosine_topk(query_vec: np.ndarray, doc_vecs: np.ndarray, k: int) -> List[Tuple[int, float]]:
-    if doc_vecs.size == 0:
-        return []
-    sims = doc_vecs @ query_vec
-    k = max(1, min(k, sims.shape[0]))
-    idx = np.argpartition(-sims, kth=k - 1)[:k]
-    top = sorted([(int(i), float(sims[i])) for i in idx], key=lambda x: x[1], reverse=True)
-    return top
+def load_tfidf():
+    if not (os.path.exists(TFIDF_MAT_PATH) and os.path.exists(VECTORIZER_PATH)):
+        return None, None
+    X = sparse.load_npz(TFIDF_MAT_PATH)
+    vectorizer = joblib.load(VECTORIZER_PATH)
+    return X, vectorizer
 
 
 def search(query: str, topk: int) -> List[Tuple[int, float]]:
-    embedder = get_embedder()
-    q = embedder.encode([query], normalize_embeddings=True, show_progress_bar=False)[0]
-    q = np.asarray(q, dtype=np.float32)
-    vecs = load_embeddings()
-    return cosine_topk(q, vecs, topk)
+    X, vectorizer = load_tfidf()
+    if X is None or vectorizer is None:
+        return []
+    q = vectorizer.transform([query])
+    sims = linear_kernel(q, X).ravel()
+    topk = max(1, min(topk, sims.shape[0]))
+    idx = sims.argsort()[-topk:][::-1]
+    return [(int(i), float(sims[i])) for i in idx]
 
 
 st.set_page_config(page_title="Cebimde Müşavir", layout="wide")
@@ -79,21 +62,19 @@ st.title(APP_TITLE)
 
 meta = load_meta()
 chunks = load_chunks()
-vecs = load_embeddings()
+X, vectorizer = load_tfidf()
 
-# ===== DEBUG: META GÖSTER =====
-st.write("META:", meta)
-
-if not meta or not chunks or vecs.size == 0:
+if not meta or not chunks or X is None or vectorizer is None:
     st.error(
-        "Index bulunamadı. Repo kökünde `index/` klasörü olmalı.\n\n"
-        "Çözüm: `python build_index.py` çalıştır → `index/` klasörünü commit/push et."
+        "Index bulunamadı. Repo kökünde index/ klasörü olmalı.\n\n"
+        "Çözüm: python build_index.py çalıştır → index/ klasörünü commit/push et."
     )
     st.stop()
 
 st.caption(
     f"İndeks hazır: {meta.get('pdf_count', '?')} PDF | "
-    f"{meta.get('chunk_count', '?')} parça"
+    f"{meta.get('chunk_count', '?')} parça | "
+    f"Motor: {meta.get('engine', 'tfidf')}"
 )
 
 with st.sidebar:
@@ -103,12 +84,10 @@ with st.sidebar:
 query = st.text_area(
     "Sorun / olay / metin",
     height=140,
-    placeholder="Örn: Kira geliri istisnası şartları, beyan sınırı ve tahsilat esasları nedir?"
+    placeholder="Örn: Kira geliri istisnası istisna tutarı, beyan sınırı ve tahsilat esasları nedir?"
 )
 
-run = st.button("Ara", width="stretch")
-
-if run:
+if st.button("Ara", width="stretch"):
     if not query.strip():
         st.error("Soru/metin boş.")
     else:
@@ -121,14 +100,10 @@ if run:
         else:
             for rank, (i, score) in enumerate(hits, start=1):
                 rec = chunks[i]
-                title = f"{rank}) Benzerlik: {score:.3f} | {rec['pdf']} | Sayfa {rec.get('page', '?')}"
-                text = rec["text"]
-
+                title = f"{rank}) Skor: {score:.4f} | {rec['pdf']} | Sayfa {rec.get('page', '?')}"
                 if show_all:
                     st.markdown(f"### {title}")
-                    st.write(text)
+                    st.write(rec["text"])
                 else:
                     with st.expander(title, expanded=(rank == 1)):
-                        st.write(text)
-else:
-    st.info("Soru yaz → **Ara**'ya bas. (İndeks sayesinde hızlı.)")
+                        st.write(rec["text"])

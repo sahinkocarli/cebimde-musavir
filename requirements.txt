@@ -1,4 +1,6 @@
-streamlit
-sentence-transformers
+﻿streamlit==1.54.0
 numpy
 pypdf
+scikit-learn
+scipy
+joblib
