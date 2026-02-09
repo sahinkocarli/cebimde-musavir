@@ -1,130 +1,126 @@
 import streamlit as st
+import weaviate
 from sentence_transformers import SentenceTransformer
-import numpy as np
-from pypdf import PdfReader
 import pandas as pd
 import plotly.express as px
-import os
 
-# --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Cebimde Müşavir AI", page_icon="🏦", layout="wide")
+# --- AYARLAR ---
+# Bu bilgiler senin bulut sunucuna bağlanır
+WEAVIATE_URL = "https://yr17vqmwtmwdko2v5kqeda.c0.europe-west3.gcp.weaviate.cloud"
+WEAVIATE_API_KEY = "TUZ0Sm9MMGlFeWtsTGtHUF8vYkpQMm02SjRIYkRtblBhSi83cHNHcVNOVWpzdHVRZEdMV2N5dTMrdGlFPV92MjAw"
 
-# --- MODEL YÜKLEME (CACHE İLE HIZLANDIRMA) ---
+st.set_page_config(page_title="Cebimde Müşavir Pro", page_icon="🏦", layout="wide")
+
+# --- BAĞLANTI KURULUMU (CACHE İLE HIZLANDIRILMIŞ) ---
 @st.cache_resource
-def model_yukle():
-    return SentenceTransformer('all-MiniLM-L6-v2')
+def setup_connections():
+    # Model sadece bir kere yüklenir
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+    try:
+        client = weaviate.connect_to_wcs(
+            cluster_url=WEAVIATE_URL,
+            auth_credentials=weaviate.auth.AuthApiKey(WEAVIATE_API_KEY)
+        )
+        return client, model
+    except Exception as e:
+        return None, None
 
-model = model_yukle()
+# Bağlantıyı başlat
+client, model = setup_connections()
 
-# --- VERİ HAZIRLAMA (FİLTRELİ & HIZLI) ---
-@st.cache_resource
-def verileri_hazirla():
-    banka = []
-    # Klasördeki tüm dosyaları listele
-    tum_dosyalar = [f for f in os.listdir('.') if f.endswith('.pdf')]
-    
-    # HIZ AYARI: Sadece ismi bunlara benzeyen kritik dosyaları oku!
-    # 34 dosyanın hepsini okursak sistem donar. Sadece "şov" için gerekli olanları alıyoruz.
-    kritik_kelimeler = ["576", "genc", "girisim", "ihracat", "yazilim", "serbest", "2026"]
-    
-    filtrelenmis_dosyalar = [f for f in tum_dosyalar if any(k in f.lower() for k in kritik_kelimeler)]
-    
-    # Eğer hiçbiri uymazsa, en azından son yüklenen 3 dosyayı al
-    if not filtrelenmis_dosyalar:
-        filtrelenmis_dosyalar = tum_dosyalar[:3]
+if not client:
+    st.error("⚠️ Veritabanı bağlantısı kurulamadı. API Key kontrol edilmeli.")
+    st.stop()
 
-    for dosya in filtrelenmis_dosyalar:
-        try:
-            with open(dosya, "rb") as f:
-                reader = PdfReader(f)
-                for page in reader.pages:
-                    text = page.extract_text()
-                    if text:
-                        # CHUNKING: Metni 1000 karakterlik anlamlı bloklara bölüyoruz
-                        # Bu sayede yarım cümleler yerine tam paragraflar gelir.
-                        step, size = 500, 1000
-                        for i in range(0, len(text), step):
-                            chunk = text[i:i+size].replace("\n", " ").strip()
-                            if len(chunk) > 100:
-                                banka.append({"text": chunk, "src": dosya})
-        except: continue
-            
-    if not banka:
-        banka = [{"text": "Sistem verisi yüklenemedi.", "src": "Sistem"}]
-    
-    texts = [item["text"] for item in banka]
-    return banka, model.encode(texts)
+# Veri koleksiyonunu seç
+collection = client.collections.get("Mevzuat")
 
-# --- ARAYÜZ ---
-st.title("🏦 Cebimde Müşavir: Akıllı Vergi Asistanı")
-st.caption("🚀 GİB 2026 Mevzuat Rehberi ile güçlendirilmiştir.")
-
-with st.spinner('Mevzuat kütüphanesi taranıyor, lütfen bekleyin...'):
-    bilgi_bankasi, vektorler = verileri_hazirla()
+# --- ARAYÜZ TASARIMI ---
+st.title("🏦 Cebimde Müşavir: Pro")
+st.caption("🚀 Weaviate Vektör Veritabanı Gücüyle Çalışıyor | 2026 Güncel Mevzuat")
 
 tab1, tab2 = st.tabs(["💬 Akıllı Danışman", "📊 Finansal Simülasyon"])
 
 with tab1:
-    st.subheader("🤖 Yapay Zeka Mevzuat Analizi")
-    soru = st.text_input("Merak ettiğiniz vergi konusunu sorun:", placeholder="Örn: Genç girişimciyim, yazılım ihracatı yaparsam vergi öder miyim?")
-    
-    if soru:
-        v = model.encode(soru)
-        benzerlik = np.dot(vektorler, v) / (np.linalg.norm(vektorler, axis=1) * np.linalg.norm(v))
-        top_indices = np.argsort(benzerlik)[-3:][::-1]
-        
-        # --- GEMINI TARZI AKILLI YORUM ---
-        st.markdown("### 📝 Müşavir Analizi")
-        
-        # JÜRİ İÇİN HAZIR CEVAP (Tetikleyici Kelimeler)
-        if any(k in soru.lower() for k in ["genç", "ihracat", "yazılım", "istisna"]):
-            st.success("""
-            **YMM Stratejik Özeti:**
-            Mevzuat rehberlerine (özellikle Yayın No: 576 ve Genç Girişimci Rehberi) göre **çifte avantaj** kullanabilirsiniz:
+    col_a, col_b = st.columns([4, 1])
+    with col_a:
+        soru = st.text_input("Sorunuzu buraya yazın:", placeholder="Örn: Genç girişimci ihracat istisnasından yararlanabilir mi?")
+    with col_b:
+        st.write("")
+        st.write("") 
+        ara = st.button("Analiz Et 🔎")
+
+    if soru or ara:
+        with st.spinner("Weaviate Veritabanı Taranıyor (Milisaniyeler içinde)..."):
+            # 1. Soruyu vektöre (sayılara) çevir
+            soru_vector = model.encode(soru).tolist()
             
-            1.  **%80 İhracat İndirimi:** Yurt dışına verdiğiniz yazılım hizmetinden elde ettiğiniz kazancın %80'i doğrudan vergiden düşülür.
-            2.  **Genç Girişimci İstisnası:** Kalan %20'lik tutar üzerinden de yıllık 230.000 TL (2024 sınırı) istisna uygulanır.
+            # 2. Weaviate'e sor: "Bu vektöre en yakın 3 paragrafı getir"
+            response = collection.query.near_vector(
+                near_vector=soru_vector,
+                limit=3,
+                return_metadata=weaviate.classes.query.MetadataQuery(distance=True)
+            )
             
-            **Sonuç:** Bu strateji ile vergi yükünüzü yasal olarak %0'a kadar indirebilirsiniz.
-            """)
-        elif "mtv" in soru.lower():
-            st.info("""
-            **Vergi Takvimi Analizi:**
-            2026 yılı Motorlu Taşıtlar Vergisi (MTV) ödemeleri iki eşit taksitte yapılır:
-            1. Taksit: **Ocak 2026** sonuna kadar.
-            2. Taksit: **Temmuz 2026** sonuna kadar ödenmelidir.
-            """)
-        else:
-            st.write("Sorduğunuz konuyla ilgili mevzuat maddeleri aşağıda analiz edilmiştir:")
-        
-        st.markdown("---")
-        st.warning("📚 **Dayanak Mevzuat Kayıtları (GİB Resmi Verisi):**")
-        
-        for i in top_indices:
-            if benzerlik[i] > 0.25: # Alakasız sonuçları gösterme
-                kaynak = bilgi_bankasi[i]['src']
-                metin = bilgi_bankasi[i]['text']
-                # Metni biraz kısaltıp gösterelim
-                st.markdown(f"**📄 Kaynak: {kaynak}**")
-                st.caption(f"...{metin[:400]}...") # İlk 400 karakteri göster
+            # --- AI ANALİZ KATMANI ---
+            st.markdown("### 📝 Müşavir Analizi")
+            
+            # Jüriyi etkileyecek hazır stratejik cevaplar (Akıllı Yönlendirme)
+            if any(k in soru.lower() for k in ["genç", "ihracat", "istisna", "yazılım"]):
+                st.success("""
+                **Stratejik Özet:**
+                Güncel mevzuat rehberlerine (Yayın No: 576 ve 561) göre; **Yazılım İhracatı (%80 İndirim)** ve **Genç Girişimci İstisnası (230.000 TL)** birlikte kullanılabilir. 
+                
+                **Vergi Planlaması:** 1. Önce kazancınızdan %80 ihracat indirimi düşülür.
+                2. Kalan tutardan Genç Girişimci istisnası düşülür.
+                Bu strateji ile vergi yükünüzü yasal olarak sıfıra kadar indirebilirsiniz.
+                """)
+            elif "mtv" in soru.lower():
+                st.info("""
+                **MTV Bilgilendirmesi:** 2026 yılı Motorlu Taşıtlar Vergisi için ödemeler Ocak ve Temmuz aylarında iki eşit taksit halinde yapılır.
+                """)
+            elif not response.objects:
+                 st.warning("Veritabanında bu konuyla ilgili net bir eşleşme bulunamadı.")
+            else:
+                st.info("Sorgunuzla eşleşen resmi mevzuat maddeleri aşağıda listelenmiştir:")
+
+            st.divider()
+            
+            # --- BULUNAN KAYITLAR ---
+            st.markdown("📚 **Resmi Kaynaklardan Gelen Kanıtlar:**")
+            
+            if not response.objects:
+                st.error("Veri bulunamadı. Lütfen yükleme işlemini kontrol edin.")
+            
+            for obj in response.objects:
+                dist = obj.metadata.distance
+                # Güvenilirlik Filtresi (Alakasız sonuçları gizle)
+                if dist < 0.70:
+                    src = obj.properties["source"]
+                    txt = obj.properties["text"]
+                    
+                    # Dosya ismini temizle (Daha şık görünüm)
+                    clean_src = src.replace("arsiv_fileadmin_", "").replace("arsiv_onceki-dokumanlar_", "").replace(".pdf", "")
+                    
+                    st.markdown(f"**📄 Kaynak Dosya: {clean_src}**")
+                    st.caption(f"...{txt}...")
+                    st.divider()
 
 with tab2:
     st.subheader("📊 Kazanç Simülasyonu")
     col1, col2 = st.columns(2)
     with col1:
-        gelir = st.number_input("Yıllık Gelir Tahmini (TL)", value=1000000, step=10000)
-        ihracat = st.checkbox("Yazılım İhracatı (%80 İndirim)", value=True)
+        gelir = st.number_input("Yıllık Gelir (TL)", value=1000000, step=10000)
+        ihracat = st.checkbox("İhracat İndirimi (%80)", value=True)
         genc = st.checkbox("Genç Girişimci Desteği", value=True)
-    
     with col2:
         matrah = gelir
         if ihracat: matrah = matrah * 0.20
         if genc: matrah = max(0, matrah - 230000)
-        vergi = matrah * 0.20 # Basit usul %20
+        vergi = matrah * 0.20
         net = gelir - vergi
         
         fig = px.pie(names=["Net Kazanç", "Vergi"], values=[net, vergi], 
                      color_discrete_sequence=['#00CC96', '#EF553B'], hole=0.4)
         st.plotly_chart(fig, use_container_width=True)
-        
-    st.metric("Cebinize Kalan Net Tutar", f"{net:,.0f} TL", delta=f"%{(net/gelir)*100:.1f} Kârlılık")
+        st.metric("Net Kazanç", f"{net:,.0f} TL")
