@@ -11,14 +11,15 @@ from datetime import datetime
 from fpdf import FPDF
 
 # --- ULTRA-PRO SAYFA AYARLARI ---
-st.set_page_config(page_title="YMM AI WEB", page_icon="🌐", layout="wide")
+st.set_page_config(page_title="Cebimde Musavir AI", page_icon="🏦", layout="wide")
 
 # --- MODERN DARK THEME (CSS) ---
 st.markdown("""
     <style>
     .main { background-color: #0e1117; color: #ffffff; }
     .stMetric { background-color: #161b22; padding: 20px; border-radius: 15px; border: 1px solid #30363d; }
-    .stButton>button { background-color: #238636; color: white; border-radius: 8px; border: none; height: 3em; }
+    .stButton>button { background-color: #238636; color: white; border-radius: 8px; border: none; height: 3.5em; width: 100%; font-weight: bold; }
+    .stButton>button:hover { background-color: #2ea043; border: 1px solid #ffffff; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -29,56 +30,21 @@ def tr_temizle(metin):
     tablo = str.maketrans(kaynak, hedef)
     return str(metin).translate(tablo)
 
-# --- GELİŞMİŞ PDF FONKSİYONU (TABLOLU) ---
+# --- PDF FONKSİYONU ---
 def pdf_olustur(data, yorum):
     pdf = FPDF()
     pdf.add_page()
-    
-    # Başlık
-    pdf.set_font("Arial", 'B', 20)
-    pdf.set_text_color(31, 111, 235)
-    pdf.cell(200, 20, txt=tr_temizle("STRATEJIK FINANSAL DENETIM RAPORU"), ln=True, align='C')
-    
-    # Çizgi
-    pdf.set_draw_color(48, 54, 61)
-    pdf.line(10, 35, 200, 35)
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, txt=tr_temizle("CEBIMDE MUSAVIR - FINANSAL ANALIZ RAPORU"), ln=True, align='C')
     pdf.ln(10)
-    
-    # Veri Tablosu
+    pdf.set_font("Arial", size=12)
+    for k, v in data.items():
+        pdf.cell(100, 10, txt=tr_temizle(f"{k}: {v}"), ln=True)
+    pdf.ln(10)
     pdf.set_font("Arial", 'B', 12)
-    pdf.set_fill_color(240, 242, 246)
-    pdf.set_text_color(0, 0, 0)
-    
-    headers = ["Kalem", "Deger"]
-    rows = [
-        ["Rapor Tarihi", data['tarih']],
-        ["Isletme Tipi", data['tip']],
-        ["Yillik Gelir", f"{data['gelir']:,.0f} TL"],
-        ["Yillik Gider", f"{data['gider']:,.0f} TL"],
-        ["Net Kar", f"{data['kar']:,.0f} TL"],
-        ["Hesaplanan Vergi", f"{data['vergi']:,.0f} TL"],
-        ["Cari Oran", f"{data['cari']:.2f}"]
-    ]
-    
-    for header in headers:
-        pdf.cell(95, 10, tr_temizle(header), 1, 0, 'C', True)
-    pdf.ln()
-    
+    pdf.cell(200, 10, txt=tr_temizle("YAPAY ZEKA STRATEJI NOTU:"), ln=True)
     pdf.set_font("Arial", size=11)
-    for row in rows:
-        pdf.cell(95, 10, tr_temizle(row[0]), 1)
-        pdf.cell(95, 10, tr_temizle(row[1]), 1)
-        pdf.ln()
-    
-    # Yapay Zeka Yorumu
-    pdf.ln(10)
-    pdf.set_font("Arial", 'B', 14)
-    pdf.set_text_color(35, 134, 54)
-    pdf.cell(200, 10, txt=tr_temizle("YAPAY ZEKA ANALIZ NOTU:"), ln=True)
-    pdf.set_font("Arial", size=11)
-    pdf.set_text_color(0, 0, 0)
     pdf.multi_cell(190, 8, txt=tr_temizle(yorum))
-    
     return pdf.output(dest='S').encode('latin-1', 'ignore')
 
 # --- MODEL VE HAFIZA SİSTEMİ ---
@@ -89,71 +55,105 @@ def model_yukle():
 model = model_yukle()
 
 def verileri_hazirla(uploaded_file=None):
+    # Hafıza birimleri daha net ve ayrıştırılmış hale getirildi
     banka = [
-        "Yazılım İhracatı İstisnası: Yurt dışına verilen hizmet kazancının %80'i vergiden istisnadır.",
-        "Dükkan Açma: İşyeri açılması durumunda esnaf muafiyeti sona erer.",
-        "Giderler: Personel, kira ve hammadde harcamaları vergiden düşülebilir.",
-        "Genç Girişimci: 29 yaş altı şahıs şirketlerine 3 yıl destek sağlanır."
+        "EV HANIMLARI MUAFİYETİ: Evde imal edilen lif, dantel, nakış gibi ürünlerin internetten satışı yıllık belirli bir tutara kadar (GVK Md. 9) vergiden muaftır. Ancak bir işyeri veya dükkan açılırsa bu muafiyet tamamen sona erer.",
+        "YAZILIM İHRACATI İSTİSNASI: Sadece yurt dışındaki müşterilere verilen yazılım, tasarım ve veri depolama hizmetlerinden elde edilen kazancın %80'i vergiden istisnadır (KVK Md. 10/ğ). Yurt içi satışlar bu kapsama girmez.",
+        "GENÇ GİRİŞİMCİ DESTEĞİ: 29 yaş altı şahıs işletmesi kuranlara 3 yıl boyunca vergi muafiyeti sağlanır. Limited (LTD) veya Anonim (AŞ) şirketler bu haktan yararlanamaz.",
+        "GİDERLER: Personel maaşları, işyeri kirası, hammadde alımları ve işle ilgili resmi faturalı harcamalar vergi matrahından düşülebilir.",
+        "KURUMLAR VERGİSİ: Şirketler (LTD ve AŞ) için standart vergi oranı 2024 yılı itibarıyla %25'tir.",
+        "CARİ ORAN: 1.5 ve üzeri değerler işletmenin borç ödeme gücünün yüksek olduğunu gösterir."
     ]
     if uploaded_file:
         try:
             reader = PdfReader(uploaded_file)
             for page in reader.pages:
                 text = page.extract_text()
-                if text: banka.extend([s.strip() for s in re.split(r'\.', text) if len(s) > 30])
+                if text: banka.extend([s.strip() for s in re.split(r'(?<!\d)\.(?=\s)', text) if len(s.strip()) > 30])
         except: pass
     return banka, model.encode(banka)
 
-if "messages" not in st.session_state: st.session_state.messages = []
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-# --- ARAYÜZ ---
+# --- ARAYÜZ TASARIMI ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3135/3135706.png", width=100)
-    st.title("YMM AI Control")
-    f = st.file_uploader("Mevzuat Yükle (PDF)", type="pdf")
-    if st.button("Hafızayı Temizle"): st.session_state.messages = []; st.rerun()
+    st.title("🏦 Cebimde Musavir")
+    st.markdown("---")
+    f = st.file_uploader("Mevzuat PDF'i Yükle", type="pdf")
+    if st.button("Sohbeti Temizle"):
+        st.session_state.messages = []
+        st.rerun()
+    st.markdown("---")
+    st.info("V10.0 Web Sürümü | Sahin Kocarlı")
 
 bilgi_bankasi, vektorler = verileri_hazirla(f)
 
-# --- TABS ---
-t1, t2, t3 = st.tabs(["💬 Danışman", "📊 Analiz & Rapor", "📈 Tahminleme"])
+# --- SEKMELER ---
+t1, t2, t3 = st.tabs(["💬 Akıllı Danışman", "📊 Finansal Analiz", "🔮 Gelecek Simülasyonu"])
 
+# TAB 1: SOHBET (Eşik değeri 0.40'a çekildi)
 with t1:
     for m in st.session_state.messages:
         with st.chat_message(m["role"]): st.markdown(m["content"])
     
-    if p := st.chat_input("Sorunuzu yazın..."):
+    if p := st.chat_input("Vergi veya muafiyet hakkında sorun..."):
         st.session_state.messages.append({"role": "user", "content": p})
         with st.chat_message("user"): st.markdown(p)
         
-        v = model.encode(p)
-        s = np.dot(vektorler, v) / (np.linalg.norm(vektorler, axis=1) * np.linalg.norm(v))
-        idx = np.argmax(s)
-        res = bilgi_bankasi[idx] if s[idx] > 0.3 else "Lütfen detaylı bilgi için PDF yükleyin."
-        with st.chat_message("assistant"): st.markdown(res)
-        st.session_state.messages.append({"role": "assistant", "content": res})
-
-with t2:
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        tip = st.selectbox("İşletme Türü", ["Kurumlar Vergisi (%25)", "Gelir Vergisi (%20)"])
-        gelir = st.number_input("Yıllık Ciro (TL)", value=1000000.0)
-        gider = st.number_input("Yıllık Gider (TL)", value=600000.0)
-        dv = st.number_input("Kasadaki Nakit/Varlık", value=200000.0)
-        kb = st.number_input("Kısa Vadeli Borçlar", value=100000.0)
+        p_v = model.encode(p)
+        sims = np.dot(vektorler, p_v) / (np.linalg.norm(vektorler, axis=1) * np.linalg.norm(p_v))
+        idx = np.argmax(sims)
         
-        if st.button("Hesapla ve PDF Hazırla"):
-            oran = 0.25 if "Kurum" in tip else 0.20
-            kar = gelir - gider
-            vergi = kar * oran if kar > 0 else 0
-            cari = dv / kb if kb > 0 else 0
-            yorum = f"Analiz Sonucu: {'Güçlü likidite.' if cari > 1.5 else 'Nakit yönetimine dikkat.'} Vergi yükü %{oran*100} üzerinden hesaplanmıştır."
-            st.session_state['data'] = {"tarih": datetime.now().strftime("%d/%m/%Y"), "tip": tip, "gelir": gelir, "gider": gider, "kar": kar, "vergi": vergi, "cari": cari}
-            st.session_state['yorum'] = yorum
-            st.success("Raporunuz hazırlandı!")
+        # Daha kesin cevaplar için eşik 0.40 yapıldı
+        ans = bilgi_bankasi[idx] if sims[idx] > 0.40 else "Bu sorunuzla ilgili veritabanımda tam eşleşme bulamadım. Lütfen ilgili mevzuat PDF'ini yan menüden yükleyin veya sorunuzu detaylandırın."
+        
+        full_ans = f"**Analiz:** {ans}"
+        with st.chat_message("assistant"): st.markdown(full_ans)
+        st.session_state.messages.append({"role": "assistant", "content": full_ans})
 
-    with col2:
-        if 'data' in st.session_state:
-            d = st.session_state['data']
-            st.metric("Ödenecek Toplam Vergi", f"{d['vergi']:,.0f} TL")
-            st.download_button("📜 Profesyonel Raporu İndir (PDF)", pdf_olustur(d, st.session_state['yorum']), "YMM_Raporu.pdf")
+# TAB 2: ANALİZ
+with t2:
+    st.subheader("📋 Mevcut Durum Analizi")
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        tip = st.selectbox("İşletme Tipi", ["Kurumlar Vergisi (%25)", "Gelir Vergisi (%20)"])
+        gelir = st.number_input("Yıllık Ciro", value=5000000.0)
+        gider = st.number_input("Yıllık Gider", value=3000000.0)
+        dv = st.number_input("Dönen Varlıklar", value=1500000.0)
+        kb = st.number_input("Kısa Vadeli Borçlar", value=1000000.0)
+        
+        if st.button("Hesapla ve Rapor Hazırla"):
+            kar = gelir - gider
+            vergi = kar * (0.25 if "Kurum" in tip else 0.20)
+            cari = dv / kb if kb > 0 else 0
+            yorum = f"Cari oranınız {cari:.2f}. " + ("Finansal yapınız güçlü." if cari >= 1.5 else "Nakit akışına dikkat edilmeli.")
+            st.session_state['report_data'] = {"Tarih": datetime.now().strftime("%d/%m/%Y"), "Isletme": tip, "Kar": f"{kar:,.0f} TL", "Vergi": f"{vergi:,.0f} TL", "Cari Oran": f"{cari:.2f}"}
+            st.session_state['report_comment'] = yorum
+            st.success("Analiz tamamlandı. Raporu aşağıdan indirebilirsiniz.")
+
+    with c2:
+        if 'report_data' in st.session_state:
+            st.metric("Ödenecek Vergi", st.session_state['report_data']['Vergi'])
+            st.download_button("📜 Raporu PDF Olarak İndir", pdf_olustur(st.session_state['report_data'], st.session_state['report_comment']), "YMM_Analiz_Raporu.pdf")
+            
+            # Cari Oran Grafiği
+            fig = go.Figure(go.Indicator(mode="gauge+number", value=float(st.session_state['report_data']['Cari Oran']), title={'text': "Borç Ödeme Gücü (Cari Oran)"},
+                gauge={'axis':{'range':[0,3]}, 'steps':[{'range':[0,1],'color':"red"},{'range':[1,2],'color':"orange"},{'range':[2,3],'color':"green"}]}))
+            st.plotly_chart(fig, use_container_width=True)
+
+# TAB 3: TAHMİNLEME
+with t3:
+    st.subheader("🔮 Gelecek Simülasyonu")
+    if 'report_data' in st.session_state:
+        d = st.session_state['report_data']
+        oran = st.slider("Gelecek Ay Beklenen Satış Artışı (%)", -50, 100, 20)
+        eski_gelir = float(d['Kar'].replace(' TL', '').replace(',', '')) + 3000000.0 # Tahmini gider ekli
+        yeni_kar = (eski_gelir * (1 + oran/100)) - 3000000.0
+        yeni_vergi = yeni_kar * (0.25 if "Kurum" in d['Isletme'] else 0.20)
+        
+        st.write(f"Satışlar %{oran} artarsa, tahmini yeni vergi yükü: **{max(0, yeni_vergi):,.0f} TL** olacaktır.")
+        fig_bar = px.bar(x=["Mevcut Vergi", "Yeni Vergi"], y=[float(d['Vergi'].replace(' TL', '').replace(',', '')), yeni_vergi], color_discrete_sequence=['#238636'])
+        st.plotly_chart(fig_bar, use_container_width=True)
+    else:
+        st.info("Lütfen önce 'Finansal Analiz' sekmesinden hesaplama yapın.")
