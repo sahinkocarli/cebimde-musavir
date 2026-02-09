@@ -1,112 +1,82 @@
 import streamlit as st
-import weaviate
-import google.generativeai as genai
-import pandas as pd
-import plotly.express as px
 
-# --- AYARLAR ---
-st.set_page_config(page_title="Cebimde Müşavir Pro", page_icon="🏦", layout="wide")
-
-# ANAHTARLAR (Senin Anahtarların)
-GOOGLE_API_KEY = "AIzaSyCYvni5lwKVqftdHLMi0C9pRQ4HA-htq1U"
-WEAVIATE_URL = "https://yr17vqmwtmwdko2v5kqeda.c0.europe-west3.gcp.weaviate.cloud"
-WEAVIATE_API_KEY = "TUZ0Sm9MMGlFeWtsTGtHUF8vYkpQMm02SjRIYkRtblBhSi83cHNHcVNOVWpzdHVRZEdMV2N5dTMrdGlFPV92MjAw"
-
-# Google'ı Hazırla
-genai.configure(api_key=GOOGLE_API_KEY)
+# =========================
+# 1) CACHE'Lİ KAYNAKLAR (BURAYA)
+# =========================
 
 @st.cache_resource
-def get_weaviate_client():
-    try:
-        return weaviate.connect_to_wcs(
-            cluster_url=WEAVIATE_URL,
-            auth_credentials=weaviate.auth.AuthApiKey(WEAVIATE_API_KEY)
-        )
-    except:
-        return None
+def get_client():
+    """
+    Buraya LLM client / DB connection / model load koy.
+    Örn: OpenAI client, Weaviate client, vs.
+    """
+    # return client
+    return None
 
-client = get_weaviate_client()
 
-# --- ARAYÜZ ---
-st.title("🏦 Cebimde Müşavir: Pro (Google Altyapısı)")
-st.caption("🚀 Gerçek Zamanlı ve Hızlı Mevzuat Analizi")
+@st.cache_data(ttl=3600)
+def load_mevzuat_text():
+    """
+    Eğer dosyadan mevzuat okuyorsan buraya al.
+    Her rerun'da dosya okuma işkencesi biter.
+    """
+    # with open("mevzuat.txt", "r", encoding="utf-8") as f:
+    #     return f.read()
+    return ""
 
-if not client:
-    st.error("Veritabanı bağlantısı kurulamadı.")
-    st.stop()
 
-# Koleksiyonu Seç
-try:
-    collection = client.collections.get("MevzuatGemini")
-except:
-    st.error("Veritabanı bulunamadı. Lütfen bilgisayarınızdan 'yukle.py' dosyasını çalıştırın.")
-    st.stop()
+@st.cache_data(ttl=3600)
+def analyze_cached(user_text: str):
+    """
+    Ağır analizi buraya koy.
+    Bu fonksiyonun içinde LLM çağrısı / parsing / embedding ne varsa olur.
+    """
+    client = get_client()
+    mevzuat = load_mevzuat_text()
 
-tab1, tab2 = st.tabs(["💬 Danışman", "📊 Hesapla"])
+    # === BURAYA SENİN ANALİZ KODUN GELECEK ===
+    # result = analyze(user_text, mevzuat, client)
+    result = f"Demo sonuç: {user_text[:200]}"
+    return result
 
-with tab1:
-    col1, col2 = st.columns([4, 1])
-    with col1:
-        soru = st.text_input("Sorunuzu yazın:", placeholder="Örn: Genç girişimci ihracat istisnasından yararlanabilir mi?")
-    with col2:
-        st.write("")
-        st.write("")
-        btn = st.button("Analiz Et 🔎")
 
-    if soru or btn:
-        with st.spinner("Google Gemini Analiz Ediyor..."):
-            try:
-                # 1. Soruyu Vektöre Çevir (Google Hızı)
-                embedding = genai.embed_content(
-                    model="models/text-embedding-004",
-                    content=soru,
-                    task_type="retrieval_query"
-                )['embedding']
+# =========================
+# 2) UI (BURADAN AŞAĞISI EKRAN)
+# =========================
 
-                # 2. Ara
-                response = collection.query.near_vector(
-                    near_vector=embedding,
-                    limit=3,
-                    return_metadata=weaviate.classes.query.MetadataQuery(distance=True)
-                )
+st.set_page_config(page_title="Cebimde Müşavir", layout="wide")
+st.title("Cebimde Müşavir – Profesyonel Mevzuat Analizi")
 
-                # 3. Sonuç
-                st.markdown("### 📝 Analiz Sonucu")
-                
-                # Akıllı Özet
-                if "genç" in soru.lower() and "ihracat" in soru.lower():
-                     st.success("""
-                     **Stratejik Özet:**
-                     Mevzuata göre; **Genç Girişimci İstisnası (230.000 TL)** ve **Yazılım İhracatı (%80 İndirim)** birleştirilerek vergi avantajı sağlanabilir.
-                     """)
+# Session state (sonucu tutmak için)
+if "last_text" not in st.session_state:
+    st.session_state.last_text = ""
+if "last_result" not in st.session_state:
+    st.session_state.last_result = None
 
-                if not response.objects:
-                    st.warning("Veritabanında eşleşme bulunamadı. 'yukle.py' işlemini tamamladınız mı?")
-                
-                for obj in response.objects:
-                    # Güvenilirlik filtresi
-                    if obj.metadata.distance < 0.8:
-                        src = obj.properties["source"].replace("arsiv_fileadmin_", "").replace(".pdf", "")
-                        st.info(f"📄 **Kaynak:** {src}\n\n...{obj.properties['text']}...")
+user_text = st.text_area("Metninizi girin", height=200)
 
-            except Exception as e:
-                st.error(f"Hata oluştu: {e}")
+col1, col2 = st.columns([1, 3])
+with col1:
+    run = st.button("Analiz Et", use_container_width=True)
 
-with tab2:
-    st.subheader("📊 Kazanç Simülasyonu")
-    col1, col2 = st.columns(2)
-    with col1:
-        gelir = st.number_input("Yıllık Gelir (TL)", value=1000000, step=10000)
-        ihracat = st.checkbox("İhracat İndirimi (%80)", value=True)
-        genc = st.checkbox("Genç Girişimci", value=True)
-    with col2:
-        matrah = gelir
-        if ihracat: matrah = matrah * 0.20
-        if genc: matrah = max(0, matrah - 230000)
-        vergi = matrah * 0.20
-        net = gelir - vergi
-        
-        fig = px.pie(names=["Net Kazanç", "Vergi"], values=[net, vergi], 
-                     color_discrete_sequence=['#00CC96', '#EF553B'], hole=0.4)
-        st.plotly_chart(fig, use_container_width=True)
-        st.metric("Net Kazanç", f"{net:,.0f} TL")
+# =========================
+# 3) BUTON TIKLANINCA ÇALIŞTIR (EN KRİTİK YER)
+# =========================
+
+if run:
+    if not user_text.strip():
+        st.warning("Analiz için metin girmen gerekiyor.")
+    else:
+        # Aynı metin tekrar analiz edilmesin (boşa bekletmesin)
+        if user_text != st.session_state.last_text:
+            with st.spinner("Analiz yapılıyor..."):
+                st.session_state.last_result = analyze_cached(user_text)
+            st.session_state.last_text = user_text
+
+# =========================
+# 4) SONUCU GÖSTER
+# =========================
+
+if st.session_state.last_result:
+    st.subheader("Sonuç")
+    st.write(st.session_state.last_result)
