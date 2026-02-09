@@ -1,8 +1,5 @@
 streamlit
-sentence-transformers
-numpy
-pypdf
+weaviate-client
 pandas
 plotly
-fpdf
-weaviate-client
+requests
