@@ -1,5 +1,5 @@
 streamlit
 weaviate-client
+google-generativeai
 pandas
 plotly
-requests
