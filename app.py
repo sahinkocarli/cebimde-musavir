@@ -4,17 +4,16 @@ from sentence_transformers import SentenceTransformer
 import pandas as pd
 import plotly.express as px
 
-# --- AYARLAR ---
-# Bu bilgiler senin bulut sunucuna bağlanır
+# --- AYARLAR (HIZ İÇİN BULUT BAĞLANTISI) ---
 WEAVIATE_URL = "https://yr17vqmwtmwdko2v5kqeda.c0.europe-west3.gcp.weaviate.cloud"
 WEAVIATE_API_KEY = "TUZ0Sm9MMGlFeWtsTGtHUF8vYkpQMm02SjRIYkRtblBhSi83cHNHcVNOVWpzdHVRZEdMV2N5dTMrdGlFPV92MjAw"
 
 st.set_page_config(page_title="Cebimde Müşavir Pro", page_icon="🏦", layout="wide")
 
-# --- BAĞLANTI KURULUMU (CACHE İLE HIZLANDIRILMIŞ) ---
+# --- BAĞLANTI KURULUMU ---
 @st.cache_resource
 def setup_connections():
-    # Model sadece bir kere yüklenir
+    # Model sadece ilk açılışta yüklenir, sonra hafızadan gelir
     model = SentenceTransformer('all-MiniLM-L6-v2')
     try:
         client = weaviate.connect_to_wcs(
@@ -25,11 +24,10 @@ def setup_connections():
     except Exception as e:
         return None, None
 
-# Bağlantıyı başlat
 client, model = setup_connections()
 
 if not client:
-    st.error("⚠️ Veritabanı bağlantısı kurulamadı. API Key kontrol edilmeli.")
+    st.error("⚠️ Veritabanı bağlantısı kurulamadı. Lütfen API Key'i kontrol edin.")
     st.stop()
 
 # Veri koleksiyonunu seç
@@ -51,11 +49,13 @@ with tab1:
         ara = st.button("Analiz Et 🔎")
 
     if soru or ara:
-        with st.spinner("Weaviate Veritabanı Taranıyor (Milisaniyeler içinde)..."):
+        # Spinner sadece milisaniyeler sürecek
+        with st.spinner("Weaviate Bulut Veritabanı Taranıyor..."):
+            
             # 1. Soruyu vektöre (sayılara) çevir
             soru_vector = model.encode(soru).tolist()
             
-            # 2. Weaviate'e sor: "Bu vektöre en yakın 3 paragrafı getir"
+            # 2. Weaviate'e sor (PDF okuma YOK, direkt cevap var)
             response = collection.query.near_vector(
                 near_vector=soru_vector,
                 limit=3,
@@ -65,7 +65,7 @@ with tab1:
             # --- AI ANALİZ KATMANI ---
             st.markdown("### 📝 Müşavir Analizi")
             
-            # Jüriyi etkileyecek hazır stratejik cevaplar (Akıllı Yönlendirme)
+            # Jüriyi etkileyecek hazır stratejik cevaplar
             if any(k in soru.lower() for k in ["genç", "ihracat", "istisna", "yazılım"]):
                 st.success("""
                 **Stratejik Özet:**
@@ -94,12 +94,12 @@ with tab1:
             
             for obj in response.objects:
                 dist = obj.metadata.distance
-                # Güvenilirlik Filtresi (Alakasız sonuçları gizle)
+                # Güvenilirlik Filtresi
                 if dist < 0.70:
                     src = obj.properties["source"]
                     txt = obj.properties["text"]
                     
-                    # Dosya ismini temizle (Daha şık görünüm)
+                    # Dosya ismini temizle
                     clean_src = src.replace("arsiv_fileadmin_", "").replace("arsiv_onceki-dokumanlar_", "").replace(".pdf", "")
                     
                     st.markdown(f"**📄 Kaynak Dosya: {clean_src}**")
