@@ -1,9 +1,9 @@
 import streamlit as st
 import google.generativeai as genai
 import os
+import pypdf
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import pypdf
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="Cebimde Müşavir", page_icon="🧾", layout="centered")
@@ -14,22 +14,22 @@ try:
         api_key = st.secrets["GOOGLE_API_KEY"]
         genai.configure(api_key=api_key)
     else:
-        st.error("🚨 API Key bulunamadı! Secrets ayarlarını kontrol edin.")
+        st.error("🚨 HATA: Streamlit Secrets ayarlarında 'GOOGLE_API_KEY' bulunamadı!")
         st.stop()
 except Exception as e:
-    st.error(f"Hata: {e}")
+    st.error(f"🚨 API Ayar Hatası: {str(e)}")
     st.stop()
 
-# Modeli Seç
+# Modeli Seç (Hızlı ve Güncel Model)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-# --- FONKSİYON: PDF'LERİ OKU VE HAFIZAYA AT (AUTO-BUILD) ---
+# --- FONKSİYON: PDF'LERİ OKU VE HAFIZAYA AT ---
 @st.cache_resource(show_spinner=False)
 def create_knowledge_base():
     documents = []
     filenames = []
     
-    # Şu anki klasördeki tüm PDF'leri bul
+    # Klasördeki tüm PDF'leri bul
     pdf_files = [f for f in os.listdir('.') if f.endswith('.pdf')]
     
     if not pdf_files:
@@ -44,13 +44,15 @@ def create_knowledge_base():
             reader = pypdf.PdfReader(pdf_file)
             text = ""
             for page in reader.pages:
-                text += page.extract_text() + "\n"
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
             
-            # Belgeyi temizle ve listeye ekle
+            # Belgeyi listeye ekle
             documents.append(text)
             filenames.append(pdf_file)
         except Exception as e:
-            print(f"Hata ({pdf_file}): {e}")
+            st.warning(f"⚠️ Dosya okunamadı ({pdf_file}): {e}")
         
         # İlerleme çubuğunu güncelle
         progress_bar.progress((i + 1) / len(pdf_files))
@@ -58,18 +60,20 @@ def create_knowledge_base():
     status_text.empty()
     progress_bar.empty()
 
-    # TF-IDF Matrisini Oluştur (Hızlı Arama Motoru)
-    vectorizer = TfidfVectorizer(stop_words=None)
-    tfidf_matrix = vectorizer.fit_transform(documents)
-    
-    return documents, filenames, vectorizer, tfidf_matrix
+    # TF-IDF Matrisini Oluştur (Arama Motoru)
+    if documents:
+        vectorizer = TfidfVectorizer(stop_words=None)
+        tfidf_matrix = vectorizer.fit_transform(documents)
+        return documents, filenames, vectorizer, tfidf_matrix
+    else:
+        return None, None, None, None
 
 # --- SİSTEM BAŞLANGICI ---
-with st.spinner("🚀 Sistem başlatılıyor ve PDF'ler okunuyor... (Bu işlem bir kez yapılır)"):
+with st.spinner("🚀 Sistem başlatılıyor ve PDF'ler okunuyor..."):
     documents, filenames, vectorizer, tfidf_matrix = create_knowledge_base()
 
 if documents is None or len(documents) == 0:
-    st.error("⚠️ Klasörde hiç PDF dosyası bulunamadı! Lütfen GitHub'a PDF yüklediğinizden emin olun.")
+    st.error("⚠️ Klasörde hiç PDF dosyası bulunamadı veya okunamadı! Lütfen GitHub'a PDF yüklediğinizden emin olun.")
     st.stop()
 
 # --- GEMINI'YE DANIŞMA FONKSİYONU ---
@@ -92,11 +96,14 @@ def ask_gemini_advisor(soru, context_text):
     VATANDAŞIN SORUSU:
     {soru}
     """
+    
     try:
+        # Hata Yönetimi Kaldırıldı -> Direkt Hatayı Göstersin
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        return "Üzgünüm, şu an cevap üretemiyorum. Lütfen tekrar deneyin."
+        # BURASI ÇOK ÖNEMLİ: Hatayı ekrana basıyoruz
+        return f"🚨 HATA OLUŞTU (Lütfen bu hatayı kopyalayıp bana gönder): \n\n{str(e)}"
 
 # --- ARAYÜZ (FRONTEND) ---
 st.title("🧾 Cebimde Müşavir AI")
@@ -129,7 +136,8 @@ if st.button("Danış") and user_query:
                 clean_name = fname.replace("arsiv_fileadmin_", "").replace("arsiv_onceki-dokumanlar_", "").replace(".pdf", "")
                 
                 found_docs.append(f"📄 {clean_name}")
-                context_data += f"\n--- KAYNAK: {clean_name} ---\n{doc_text[:3000]}...\n" # Çok uzun metinleri kısalt
+                # Çok uzun metinleri kısalt (Token limiti aşmasın diye)
+                context_data += f"\n--- KAYNAK: {clean_name} ---\n{doc_text[:4000]}...\n"
 
         if has_relevant_data:
             # 2. Gemini'ye Gönder
@@ -137,7 +145,10 @@ if st.button("Danış") and user_query:
             
             # 3. Sonucu Göster
             st.markdown("### 🤖 Müşavir Cevabı:")
-            st.info(ai_response)
+            if "🚨 HATA OLUŞTU" in ai_response:
+                st.error(ai_response) # Hata varsa kırmızı göster
+            else:
+                st.info(ai_response)
             
             # 4. Kaynakları Göster
             with st.expander("📚 Kullanılan Resmi Kaynaklar"):
