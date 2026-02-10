@@ -20,8 +20,13 @@ except Exception as e:
     st.error(f"🚨 API Ayar Hatası: {str(e)}")
     st.stop()
 
-# Modeli Seç (Hızlı ve Güncel Model)
-model = genai.GenerativeModel('gemini-pro')
+# --- MODEL SEÇİMİ (EN YENİ VE HIZLI MODEL) ---
+# Kütüphaneyi güncellediğimiz için artık bu çalışacak.
+try:
+    model = genai.GenerativeModel('gemini-1.5-flash')
+except Exception as e:
+    st.error(f"Model yüklenirken hata oluştu: {e}")
+    st.stop()
 
 # --- FONKSİYON: PDF'LERİ OKU VE HAFIZAYA AT ---
 @st.cache_resource(show_spinner=False)
@@ -40,7 +45,9 @@ def create_knowledge_base():
     
     for i, pdf_file in enumerate(pdf_files):
         try:
+            # Kullanıcıya bilgi ver
             status_text.text(f"📚 İşleniyor: {pdf_file}...")
+            
             reader = pypdf.PdfReader(pdf_file)
             text = ""
             for page in reader.pages:
@@ -52,7 +59,7 @@ def create_knowledge_base():
             documents.append(text)
             filenames.append(pdf_file)
         except Exception as e:
-            st.warning(f"⚠️ Dosya okunamadı ({pdf_file}): {e}")
+            print(f"Hata ({pdf_file}): {e}")
         
         # İlerleme çubuğunu güncelle
         progress_bar.progress((i + 1) / len(pdf_files))
@@ -69,11 +76,11 @@ def create_knowledge_base():
         return None, None, None, None
 
 # --- SİSTEM BAŞLANGICI ---
-with st.spinner("🚀 Sistem başlatılıyor ve PDF'ler okunuyor..."):
+with st.spinner("🚀 Sistem başlatılıyor ve PDF'ler okunuyor... (İlk açılışta 15-20 sn sürebilir)"):
     documents, filenames, vectorizer, tfidf_matrix = create_knowledge_base()
 
 if documents is None or len(documents) == 0:
-    st.error("⚠️ Klasörde hiç PDF dosyası bulunamadı veya okunamadı! Lütfen GitHub'a PDF yüklediğinizden emin olun.")
+    st.error("⚠️ Klasörde hiç PDF dosyası bulunamadı! Lütfen GitHub'a PDF yüklediğinizden emin olun.")
     st.stop()
 
 # --- GEMINI'YE DANIŞMA FONKSİYONU ---
@@ -98,11 +105,9 @@ def ask_gemini_advisor(soru, context_text):
     """
     
     try:
-        # Hata Yönetimi Kaldırıldı -> Direkt Hatayı Göstersin
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        # BURASI ÇOK ÖNEMLİ: Hatayı ekrana basıyoruz
         return f"🚨 HATA OLUŞTU (Lütfen bu hatayı kopyalayıp bana gönder): \n\n{str(e)}"
 
 # --- ARAYÜZ (FRONTEND) ---
@@ -145,8 +150,9 @@ if st.button("Danış") and user_query:
             
             # 3. Sonucu Göster
             st.markdown("### 🤖 Müşavir Cevabı:")
-            if "🚨 HATA OLUŞTU" in ai_response:
-                st.error(ai_response) # Hata varsa kırmızı göster
+            
+            if "🚨 HATA" in ai_response:
+                st.error(ai_response)
             else:
                 st.info(ai_response)
             
