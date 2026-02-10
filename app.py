@@ -1,44 +1,75 @@
 import streamlit as st
 import google.generativeai as genai
 import os
-import pickle
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import re
+import pypdf
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="Cebimde Müşavir", page_icon="🧾", layout="centered")
 
 # --- API ANAHTARI KONTROLÜ ---
-# Streamlit Secrets üzerinden Google API Key'i alıyoruz
 try:
-    api_key = st.secrets["GOOGLE_API_KEY"]
-    genai.configure(api_key=api_key)
+    if "GOOGLE_API_KEY" in st.secrets:
+        api_key = st.secrets["GOOGLE_API_KEY"]
+        genai.configure(api_key=api_key)
+    else:
+        st.error("🚨 API Key bulunamadı! Secrets ayarlarını kontrol edin.")
+        st.stop()
 except Exception as e:
-    st.error("🚨 HATA: Google API Key bulunamadı! Lütfen Streamlit ayarlarından Secrets kısmına ekleyin.")
+    st.error(f"Hata: {e}")
     st.stop()
 
-# Modeli Seç (Gemini 1.5 Flash - Hızlı ve Ucuz)
+# Modeli Seç
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-# --- VERİLERİ (INDEX) YÜKLE ---
-@st.cache_resource
-def load_index():
-    try:
-        if not os.path.exists("index.pkl"):
-            return None, None, None, None
-        
-        with open("index.pkl", "rb") as f:
-            data = pickle.load(f)
-        return data["documents"], data["filenames"], data["vectorizer"], data["tfidf_matrix"]
-    except Exception as e:
-        st.error(f"İndeks dosyası yüklenirken hata oluştu: {e}")
+# --- FONKSİYON: PDF'LERİ OKU VE HAFIZAYA AT (AUTO-BUILD) ---
+@st.cache_resource(show_spinner=False)
+def create_knowledge_base():
+    documents = []
+    filenames = []
+    
+    # Şu anki klasördeki tüm PDF'leri bul
+    pdf_files = [f for f in os.listdir('.') if f.endswith('.pdf')]
+    
+    if not pdf_files:
         return None, None, None, None
 
-documents, filenames, vectorizer, tfidf_matrix = load_index()
+    status_text = st.empty()
+    progress_bar = st.progress(0)
+    
+    for i, pdf_file in enumerate(pdf_files):
+        try:
+            status_text.text(f"📚 İşleniyor: {pdf_file}...")
+            reader = pypdf.PdfReader(pdf_file)
+            text = ""
+            for page in reader.pages:
+                text += page.extract_text() + "\n"
+            
+            # Belgeyi temizle ve listeye ekle
+            documents.append(text)
+            filenames.append(pdf_file)
+        except Exception as e:
+            print(f"Hata ({pdf_file}): {e}")
+        
+        # İlerleme çubuğunu güncelle
+        progress_bar.progress((i + 1) / len(pdf_files))
 
-if documents is None:
-    st.warning("⚠️ Sistem henüz hazır değil. Lütfen önce belgelerin işlenmesini bekleyin (build_index.py).")
+    status_text.empty()
+    progress_bar.empty()
+
+    # TF-IDF Matrisini Oluştur (Hızlı Arama Motoru)
+    vectorizer = TfidfVectorizer(stop_words=None)
+    tfidf_matrix = vectorizer.fit_transform(documents)
+    
+    return documents, filenames, vectorizer, tfidf_matrix
+
+# --- SİSTEM BAŞLANGICI ---
+with st.spinner("🚀 Sistem başlatılıyor ve PDF'ler okunuyor... (Bu işlem bir kez yapılır)"):
+    documents, filenames, vectorizer, tfidf_matrix = create_knowledge_base()
+
+if documents is None or len(documents) == 0:
+    st.error("⚠️ Klasörde hiç PDF dosyası bulunamadı! Lütfen GitHub'a PDF yüklediğinizden emin olun.")
     st.stop()
 
 # --- GEMINI'YE DANIŞMA FONKSİYONU ---
@@ -61,7 +92,6 @@ def ask_gemini_advisor(soru, context_text):
     VATANDAŞIN SORUSU:
     {soru}
     """
-    
     try:
         response = model.generate_content(prompt)
         return response.text
@@ -70,14 +100,14 @@ def ask_gemini_advisor(soru, context_text):
 
 # --- ARAYÜZ (FRONTEND) ---
 st.title("🧾 Cebimde Müşavir AI")
-st.caption("Resmi GİB Rehberleri ile eğitilmiş Yapay Zeka Asistanı")
+st.caption(f"📚 {len(filenames)} adet resmi rehber hafızaya alındı.")
 
 # Soru Kutusu
 user_query = st.text_input("Mevzuat sorunuzu yazın:", placeholder="Örn: Kira geliri istisnası ne kadar?")
 
 if st.button("Danış") and user_query:
     with st.spinner("🔍 Mevzuat taranıyor ve Müşavir yorumluyor..."):
-        # 1. Hızlı Arama (TF-IDF)
+        # 1. Hızlı Arama
         query_vec = vectorizer.transform([user_query])
         scores = cosine_similarity(query_vec, tfidf_matrix).flatten()
         
@@ -90,19 +120,19 @@ if st.button("Danış") and user_query:
         
         for idx in top_indices:
             score = scores[idx]
-            if score > 0.05: # Çok alakasızları filtrele
+            if score > 0.05: # Filtre
                 has_relevant_data = True
                 doc_text = documents[idx]
                 fname = filenames[idx]
                 
-                # Belge ismini temizle (arsiv_... kısmını at)
-                clean_name = fname.replace("arsiv_fileadmin_", "").replace("arsiv_onceki-dokumanlar_", "")
+                # Dosya ismini temizle
+                clean_name = fname.replace("arsiv_fileadmin_", "").replace("arsiv_onceki-dokumanlar_", "").replace(".pdf", "")
                 
                 found_docs.append(f"📄 {clean_name}")
-                context_data += f"\n--- KAYNAK: {clean_name} ---\n{doc_text}\n"
+                context_data += f"\n--- KAYNAK: {clean_name} ---\n{doc_text[:3000]}...\n" # Çok uzun metinleri kısalt
 
         if has_relevant_data:
-            # 2. Gemini'ye Gönder (Yorumlama)
+            # 2. Gemini'ye Gönder
             ai_response = ask_gemini_advisor(user_query, context_data)
             
             # 3. Sonucu Göster
@@ -113,10 +143,8 @@ if st.button("Danış") and user_query:
             with st.expander("📚 Kullanılan Resmi Kaynaklar"):
                 for doc in found_docs:
                     st.write(doc)
-                st.text_area("Ham Metin Verisi", context_data, height=150)
         else:
             st.warning("Bu konuyla ilgili mevzuat rehberlerinde eşleşen bir bilgi bulunamadı. Farklı kelimelerle aramayı deneyin.")
 
-# Alt Bilgi
 st.markdown("---")
-st.markdown("⚠️ *Bu sistem bilgilendirme amaçlıdır. Resmi beyanname vermeden önce mutlaka gerçek bir Mali Müşavir ile görüşünüz.*")
+st.markdown("⚠️ *Bu sistem bilgilendirme amaçlıdır.*")
