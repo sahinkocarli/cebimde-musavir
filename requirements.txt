@@ -1,6 +1,4 @@
-streamlit==1.54.0
-numpy
-pypdf
+streamlit
+google-generativeai
 scikit-learn
-scipy
-joblib
+numpy
