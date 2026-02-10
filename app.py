@@ -1,6 +1,7 @@
 import streamlit as st
-import google.generativeai as genai
 import os
+import requests
+import json
 import pypdf
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -9,24 +10,35 @@ from sklearn.metrics.pairwise import cosine_similarity
 st.set_page_config(page_title="Cebimde Müşavir", page_icon="🧾", layout="centered")
 
 # --- API ANAHTARI KONTROLÜ ---
-try:
-    if "GOOGLE_API_KEY" in st.secrets:
-        api_key = st.secrets["GOOGLE_API_KEY"]
-        genai.configure(api_key=api_key)
-    else:
-        st.error("🚨 HATA: Streamlit Secrets ayarlarında 'GOOGLE_API_KEY' bulunamadı!")
-        st.stop()
-except Exception as e:
-    st.error(f"🚨 API Ayar Hatası: {str(e)}")
+# Anahtarı alıyoruz ama kütüphaneye vermiyoruz, kendimiz kullanacağız.
+if "GOOGLE_API_KEY" in st.secrets:
+    api_key = st.secrets["GOOGLE_API_KEY"]
+else:
+    st.error("🚨 HATA: Streamlit Secrets ayarlarında 'GOOGLE_API_KEY' bulunamadı!")
     st.stop()
 
-# --- MODEL SEÇİMİ (GARANTİ ÇALIŞAN MODEL) ---
-# 'gemini-pro' her hesapta çalışır. Macera aramıyoruz.
-try:
-    model = genai.GenerativeModel('gemini-pro')
-except Exception as e:
-    st.error(f"Model yüklenirken hata oluştu: {e}")
-    st.stop()
+# --- YENİ YÖNTEM: DİREKT HTTP İSTEĞİ (REST API) ---
+def ask_google_directly(prompt):
+    # Google'ın en standart ve çalışan model adresi
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    
+    headers = {'Content-Type': 'application/json'}
+    data = {
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }]
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(data))
+        
+        if response.status_code == 200:
+            return response.json()['candidates'][0]['content']['parts'][0]['text']
+        else:
+            return f"🚨 Google Hatası ({response.status_code}): {response.text}"
+            
+    except Exception as e:
+        return f"🚨 Bağlantı Hatası: {str(e)}"
 
 # --- FONKSİYON: PDF'LERİ OKU VE HAFIZAYA AT ---
 @st.cache_resource(show_spinner=False)
@@ -45,7 +57,9 @@ def create_knowledge_base():
     
     for i, pdf_file in enumerate(pdf_files):
         try:
+            # Kullanıcıya bilgi ver
             status_text.text(f"📚 İşleniyor: {pdf_file}...")
+            
             reader = pypdf.PdfReader(pdf_file)
             text = ""
             for page in reader.pages:
@@ -74,15 +88,15 @@ def create_knowledge_base():
         return None, None, None, None
 
 # --- SİSTEM BAŞLANGICI ---
-with st.spinner("🚀 Sistem başlatılıyor ve PDF'ler okunuyor... (İlk açılışta 15-20 sn sürebilir)"):
+with st.spinner("🚀 Sistem başlatılıyor ve PDF'ler okunuyor... (Bu işlem bir kez yapılır)"):
     documents, filenames, vectorizer, tfidf_matrix = create_knowledge_base()
 
 if documents is None or len(documents) == 0:
     st.error("⚠️ Klasörde hiç PDF dosyası bulunamadı! Lütfen GitHub'a PDF yüklediğinizden emin olun.")
     st.stop()
 
-# --- GEMINI'YE DANIŞMA FONKSİYONU ---
-def ask_gemini_advisor(soru, context_text):
+# --- MÜŞAVİR MANTIĞI ---
+def ask_advisor(soru, context_text):
     prompt = f"""
     Sen Türkiye vergi mevzuatına hakim, uzman bir "Dijital Mali Müşavirsin".
     
@@ -102,11 +116,8 @@ def ask_gemini_advisor(soru, context_text):
     {soru}
     """
     
-    try:
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return f"🚨 HATA OLUŞTU (Lütfen bu hatayı kopyalayıp bana gönder): \n\n{str(e)}"
+    # Artık kütüphaneyi değil, kendi yazdığımız direkt fonksiyonu çağırıyoruz
+    return ask_google_directly(prompt)
 
 # --- ARAYÜZ (FRONTEND) ---
 st.title("🧾 Cebimde Müşavir AI")
@@ -139,17 +150,17 @@ if st.button("Danış") and user_query:
                 clean_name = fname.replace("arsiv_fileadmin_", "").replace("arsiv_onceki-dokumanlar_", "").replace(".pdf", "")
                 
                 found_docs.append(f"📄 {clean_name}")
-                # Çok uzun metinleri kısalt (Token limiti aşmasın diye)
+                # Çok uzun metinleri kısalt
                 context_data += f"\n--- KAYNAK: {clean_name} ---\n{doc_text[:4000]}...\n"
 
         if has_relevant_data:
-            # 2. Gemini'ye Gönder
-            ai_response = ask_gemini_advisor(user_query, context_data)
+            # 2. Direkt Google'a Sor
+            ai_response = ask_advisor(user_query, context_data)
             
             # 3. Sonucu Göster
             st.markdown("### 🤖 Müşavir Cevabı:")
             
-            if "🚨 HATA" in ai_response:
+            if "🚨" in ai_response:
                 st.error(ai_response)
             else:
                 st.info(ai_response)
@@ -159,7 +170,7 @@ if st.button("Danış") and user_query:
                 for doc in found_docs:
                     st.write(doc)
         else:
-            st.warning("Bu konuyla ilgili mevzuat rehberlerinde eşleşen bir bilgi bulunamadı. Farklı kelimelerle aramayı deneyin.")
+            st.warning("Bu konuyla ilgili mevzuat rehberlerinde eşleşen bir bilgi bulunamadı.")
 
 st.markdown("---")
 st.markdown("⚠️ *Bu sistem bilgilendirme amaçlıdır.*")
