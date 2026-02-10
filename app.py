@@ -20,10 +20,10 @@ except Exception as e:
     st.error(f"🚨 API Ayar Hatası: {str(e)}")
     st.stop()
 
-# --- MODEL SEÇİMİ (EN YENİ VE HIZLI MODEL) ---
-# Kütüphaneyi güncellediğimiz için artık bu çalışacak.
+# --- MODEL SEÇİMİ (GARANTİ ÇALIŞAN MODEL) ---
+# 'gemini-pro' her hesapta çalışır. Macera aramıyoruz.
 try:
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-pro')
 except Exception as e:
     st.error(f"Model yüklenirken hata oluştu: {e}")
     st.stop()
@@ -45,9 +45,7 @@ def create_knowledge_base():
     
     for i, pdf_file in enumerate(pdf_files):
         try:
-            # Kullanıcıya bilgi ver
             status_text.text(f"📚 İşleniyor: {pdf_file}...")
-            
             reader = pypdf.PdfReader(pdf_file)
             text = ""
             for page in reader.pages:
