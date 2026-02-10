@@ -21,7 +21,7 @@ except Exception as e:
     st.stop()
 
 # Modeli Seç (Hızlı ve Güncel Model)
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-pro')
 
 # --- FONKSİYON: PDF'LERİ OKU VE HAFIZAYA AT ---
 @st.cache_resource(show_spinner=False)
