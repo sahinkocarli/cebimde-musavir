@@ -18,21 +18,17 @@ st.markdown("""
 <style>
     .stButton>button {
         width: 100%;
-        border-radius: 10px;
+        border-radius: 8px;
         height: 3em;
-        background-color: #FF4B4B;
-        color: white;
+        font-weight: bold;
     }
-    .reportview-container {
-        background: #f0f2f6
-    }
-    .sidebar .sidebar-content {
-        background: #ffffff
+    .main .block-container {
+        padding-top: 2rem;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- OTOMATİK MODEL SEÇİCİ ---
+# --- API VE MODEL SEÇİMİ ---
 try:
     if "GOOGLE_API_KEY" in st.secrets:
         api_key = st.secrets["GOOGLE_API_KEY"]
@@ -41,11 +37,13 @@ try:
         st.error("🚨 HATA: Secrets içinde GOOGLE_API_KEY bulunamadı.")
         st.stop()
 
+    # Google'a soruyoruz: Hangi modeller açık?
     available_models = []
     for m in genai.list_models():
         if 'generateContent' in m.supported_generation_methods:
             available_models.append(m.name)
     
+    # Öncelik sırasına göre en iyi modeli seç
     target_models = ['models/gemini-1.5-flash', 'models/gemini-1.5-pro', 'models/gemini-pro']
     active_model = None
     
@@ -58,7 +56,7 @@ try:
         active_model = available_models[0]
         
     if not active_model:
-        st.error("🚨 HATA: Model bulunamadı.")
+        st.error("🚨 HATA: Bu anahtar ile hiçbir modele erişilemiyor.")
         st.stop()
         
     model = genai.GenerativeModel(active_model)
@@ -72,12 +70,14 @@ except Exception as e:
 def create_knowledge_base():
     documents = []
     filenames = []
+    # Klasördeki PDF'leri bul
     pdf_files = [f for f in os.listdir('.') if f.endswith('.pdf')]
     
     if not pdf_files: return None, None, None, None
 
+    # İlerleme çubuğu
     with st.sidebar:
-        with st.status("📚 Mevzuat Taranıyor...", expanded=True) as status:
+        with st.status("📚 Kütüphane Taranıyor...", expanded=True) as status:
             progress_bar = st.progress(0)
             for i, pdf_file in enumerate(pdf_files):
                 try:
@@ -90,7 +90,7 @@ def create_knowledge_base():
                     filenames.append(pdf_file)
                 except: pass
                 progress_bar.progress((i + 1) / len(pdf_files))
-            status.update(label="✅ Mevzuat Yüklendi!", state="complete", expanded=False)
+            status.update(label="✅ Kütüphane Güncel!", state="complete", expanded=False)
 
     if documents:
         vectorizer = TfidfVectorizer(stop_words=None)
@@ -115,9 +115,9 @@ def ask_advisor(soru, context):
     Aşağıda sana verilen "RESMİ KAYNAK METİNLERİ" (CONTEXT) kullanarak, vatandaşın sorusunu net, doğru ve profesyonelce cevapla.
     
     KURALLAR:
-    1. Sadece aşağıdaki KAYNAK METİNLERdeki bilgiyi kullan.
+    1. Sadece aşağıdaki KAYNAK METİNLERdeki bilgiyi kullan. Harici bilgi (İnternet vb.) ekleme.
     2. Cevabın Türkçe, nazik ve kurumsal olsun. "Sayın Mükellefimiz" diye başlayabilirsin.
-    3. Önemli tarihleri, tutarları ve oranları **kalın** yaz veya madde madde listele.
+    3. Önemli tarihleri, tutarları ve oranları madde madde listele.
     4. Kaynaklarda bilgi yoksa, "Yüklenen rehberlerde bu konuyla ilgili net bir bilgi bulunmamaktadır." de.
     
     RESMİ KAYNAK METİNLER:
@@ -134,43 +134,54 @@ def ask_advisor(soru, context):
 
 # --- YAN MENÜ (SIDEBAR) ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=100)
-    st.title("Hızlı Erişim")
-    st.markdown("Aşağıdaki konulara tıklayarak hızlıca bilgi alabilirsiniz:")
+    st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80)
+    st.title("Hızlı İşlemler")
     
-    # Hazır Sorular (Session State Kullanımı)
-    if "user_input" not in st.session_state:
-        st.session_state.user_input = ""
+    # Session State Başlatma (Butonlar için)
+    if "query_input" not in st.session_state:
+        st.session_state.query_input = ""
 
+    def set_query(q):
+        st.session_state.query_input = q
+
+    st.markdown("Popüler Konular:")
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("🏠 Kira Geliri"):
-            st.session_state.user_input = "2024 yılı mesken kira geliri istisna tutarı ne kadar?"
-    with col2:
         if st.button("🚗 Araç Gideri"):
-            st.session_state.user_input = "Binek otomobil gider kısıtlaması oranı nedir?"
+            set_query("Binek otomobil gider kısıtlaması oranı ve şartları nelerdir?")
+    with col2:
+        if st.button("🏠 Kira İstisnası"):
+            set_query("2024 yılı mesken kira geliri istisna tutarı ne kadar?")
             
     col3, col4 = st.columns(2)
     with col3:
-        if st.button("🚀 Girişimci"):
-            st.session_state.user_input = "Genç girişimci istisnası şartları ve yaş sınırı nedir?"
+        if st.button("🚀 Genç Girişimci"):
+            set_query("Genç girişimci istisnası yaş sınırı ve şartları nelerdir?")
     with col4:
         if st.button("🍔 Yemek Bedeli"):
-            st.session_state.user_input = "2024 günlük yemek bedeli istisnası ne kadar?"
+            set_query("Günlük yemek bedeli istisnası tutarı nedir?")
 
-    st.markdown("---")
-    st.info(f"📚 Sistemde {len(filenames)} adet resmi rehber taranmaktadır.")
-    st.caption("v2.0 - Şahin Koçarlı")
+    st.divider()
+    
+    # --- YÜKLÜ DOSYALARI GÖSTEREN KISIM (YENİ!) ---
+    with st.expander("📂 Yüklü Rehberleri Gör (Tıkla)"):
+        st.caption("Aşağıdaki konular hakkında soru sorabilirsiniz:")
+        for f in filenames:
+            clean_name = f.replace("arsiv_fileadmin_", "").replace("arsiv_onceki-dokumanlar_", "").replace(".pdf", "")
+            st.code(clean_name, language="text")
+
+    st.divider()
+    st.caption(f"v3.0 | Model: {active_model}")
 
 # --- ANA SAYFA ---
 st.title("💼 Cebimde Müşavir AI")
 st.markdown("**Dijital Vergi Asistanınız 7/24 Hizmetinizde.**")
-st.divider()
+st.markdown("Soldaki menüden **'Yüklü Rehberleri Gör'** diyerek hangi konularda uzman olduğunu kontrol edebilirsiniz.")
 
-# Soru Alanı
-user_query = st.text_input("Merak ettiğiniz konuyu yazın veya soldan seçin:", value=st.session_state.user_input)
+# Soru Alanı (Session State ile bağlı)
+user_query = st.text_input("Mevzuat sorunuzu yazın:", key="query_input")
 
-if st.button("Danış 🔎") and user_query:
+if st.button("Danış 🔎", type="primary") and user_query:
     with st.spinner("Dosyalar inceleniyor ve yanıt hazırlanıyor..."):
         # 1. Hızlı Arama
         query_vec = vectorizer.transform([user_query])
@@ -193,21 +204,17 @@ if st.button("Danış 🔎") and user_query:
             # 2. AI Cevabı
             response = ask_advisor(user_query, context_data)
             
-            # 3. Şık Sonuç Gösterimi
+            # 3. Sonuç Gösterimi
             st.success("✅ Cevap Hazır!")
             st.markdown(response)
             
             # 4. Kaynakça
-            with st.expander("📚 Bilginin Kaynağı Olan Resmi Belgeler"):
+            with st.expander("📚 Bilginin Kaynağı Olan Belgeler"):
                 for doc in found_docs:
                     st.write(doc)
         else:
-            st.warning("⚠️ Bu konuyla ilgili yüklenen rehberlerde eşleşen bir bilgi bulunamadı. Lütfen farklı kelimelerle deneyin.")
+            st.warning("⚠️ Bu konuyla ilgili yüklenen rehberlerde eşleşen bir bilgi bulunamadı. Lütfen 'Yüklü Rehberler' listesini kontrol edip tekrar deneyin.")
 
 # --- ALT BİLGİ (FOOTER) ---
 st.markdown("---")
-col_footer1, col_footer2 = st.columns([1, 4])
-with col_footer1:
-    st.markdown("🤖 **AI Powered**")
-with col_footer2:
-    st.caption("YASAL UYARI: Bu uygulama yapay zeka destekli bilgilendirme amaçlıdır. Verilen bilgilerin resmi geçerliliği yoktur. Nihai kararlarınız ve resmi işlemleriniz için lütfen Yeminli Mali Müşavirinize danışınız.")
+st.caption("YASAL UYARI: Bu uygulama yapay zeka destekli bilgilendirme amaçlıdır. Nihai kararlarınız için lütfen Yeminli Mali Müşavirinize danışınız.")
