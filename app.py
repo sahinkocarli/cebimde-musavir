@@ -5,22 +5,30 @@ import pypdf
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-# --- SAYFA AYARLARI ---
+# --- SAYFA AYARLARI (Geniş ve Modern) ---
 st.set_page_config(
-    page_title="Cebimde Müşavir PRO",
-    page_icon="💼",
+    page_title="Mevzuat AI - Prototip",
+    page_icon="⚖️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- STİL AYARLARI ---
+# --- TASARIM (Teknolojik Görünüm) ---
 st.markdown("""
 <style>
     .stButton>button {
         width: 100%;
         border-radius: 8px;
         height: 3em;
-        font-weight: bold;
+        font-weight: 600;
+        background-color: #0066cc; /* Kurumsal Mavi */
+        color: white;
+    }
+    .stButton>button:hover {
+        background-color: #0052a3;
+    }
+    .block-container {
+        padding-top: 1.5rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -34,7 +42,6 @@ try:
         st.error("🚨 HATA: Secrets içinde GOOGLE_API_KEY bulunamadı.")
         st.stop()
 
-    # Model Seçici (Otomatik)
     available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
     target_models = ['models/gemini-1.5-flash', 'models/gemini-1.5-pro', 'models/gemini-pro']
     active_model = None
@@ -65,9 +72,8 @@ def create_knowledge_base():
     
     if not pdf_files: return None, None, None, None
 
-    # Yükleme ekranı (Sidebar)
     with st.sidebar:
-        with st.status("📚 Kütüphane Taranıyor...", expanded=True) as status:
+        with st.status("🧠 Yapay Zeka Mevzuatı Tarıyor...", expanded=True) as status:
             progress_bar = st.progress(0)
             for i, pdf_file in enumerate(pdf_files):
                 try:
@@ -80,7 +86,7 @@ def create_knowledge_base():
                     filenames.append(pdf_file)
                 except: pass
                 progress_bar.progress((i + 1) / len(pdf_files))
-            status.update(label="✅ Hazır!", state="complete", expanded=False)
+            status.update(label="✅ Veri Tabanı Hazır!", state="complete", expanded=False)
 
     if documents:
         vectorizer = TfidfVectorizer(stop_words=None)
@@ -93,7 +99,7 @@ def create_knowledge_base():
 documents, filenames, vectorizer, tfidf_matrix = create_knowledge_base()
 
 if not documents:
-    st.error("⚠️ Klasörde PDF bulunamadı!")
+    st.error("⚠️ Klasörde PDF bulunamadı! Lütfen GitHub'a dosya yükleyin.")
     st.stop()
 
 # --- MÜŞAVİR FONKSİYONU ---
@@ -102,13 +108,13 @@ def ask_advisor(soru, context):
     Sen Türkiye Vergi Mevzuatına hakim, uzman bir Mali Müşavirsin.
     
     GÖREVİN:
-    Aşağıdaki "RESMİ KAYNAK METİNLERİ" kullanarak vatandaşın sorusunu cevapla.
+    Aşağıdaki "RESMİ KAYNAK METİNLERİ" kullanarak soruyu cevapla.
     
     KURALLAR:
     1. Sadece verilen kaynakları kullan.
-    2. Cevabın Türkçe, net ve profesyonel olsun. "Sayın Mükellefimiz" diye başla.
-    3. Önemli sayıları, yaş sınırlarını ve tarihleri madde madde yaz.
-    4. Kaynaklarda bilgi yoksa "Bu konuda yüklenen rehberlerde bilgi bulunamadı" de.
+    2. Cevabın Türkçe, net ve profesyonel olsun.
+    3. Önemli sayıları, limitleri ve tarihleri **kalın** yaz veya madde madde listele.
+    4. Kaynaklarda bilgi yoksa "Mevcut yüklenen rehberlerde bu konu hakkında bilgi bulunmamaktadır." de.
     
     KAYNAKLAR:
     {context}
@@ -122,45 +128,48 @@ def ask_advisor(soru, context):
     except Exception as e:
         return f"🚨 Hata: {str(e)}"
 
-# --- YAN MENÜ ---
+# --- YAN MENÜ (VİZYON KISMI) ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80)
-    st.title("İşlemler")
+    st.image("https://cdn-icons-png.flaticon.com/512/2620/2620541.png", width=70)
+    st.title("Mevzuat AI")
+    st.caption("Ar-Ge Prototip v1.0")
     
+    st.info("""
+    ℹ️ **Proje Hakkında:**
+    Bu sistem, vergi mevzuatının yapay zeka ile **anlık olarak analiz edilebilirliğini** göstermek amacıyla hazırlanmış bir teknik demodu.
+    
+    Yüklü olan resmi PDF rehberleri üzerinden çalışır ve kaynak gösterir.
+    """)
+
+    st.divider()
+
     if "query_input" not in st.session_state: st.session_state.query_input = ""
     def set_query(q): st.session_state.query_input = q
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🚗 Araç Gider"): set_query("Binek otomobil gider kısıtlaması oranı nedir?")
-    with col2:
-        if st.button("🏠 Kira Geliri"): set_query("2024 mesken kira istisnası ne kadar?")
-    
-    col3, col4 = st.columns(2)
-    with col3:
-        if st.button("🚀 Girişimci"): set_query("Genç girişimci istisnası yaş ve şartları?")
-    with col4:
-        if st.button("🍔 Yemek"): set_query("Günlük yemek bedeli istisnası kaç TL?")
+    st.markdown("**⚡ Örnek Senaryolar:**")
+    if st.button("🚗 Araç Gider Kısıtlaması"): set_query("Binek otomobil gider kısıtlaması oranı nedir?")
+    if st.button("🏠 Kira Geliri İstisnası"): set_query("2024 mesken kira istisnası ne kadar?")
+    if st.button("🚀 Genç Girişimci Şartları"): set_query("Genç girişimci istisnası yaş ve şartları?")
 
     st.divider()
-    with st.expander("📂 Yüklü Dosyalar"):
+    with st.expander("📂 Analiz Edilen Kaynaklar"):
         for f in filenames:
             st.caption(f"📄 {f.replace('.pdf', '')}")
 
 # --- ANA EKRAN ---
-st.title("💼 Cebimde Müşavir PRO")
-st.markdown("**Dijital Vergi Asistanınız (Genişletilmiş Hafıza)**")
+st.title("⚖️ Mevzuat Analiz Sistemi")
+st.markdown("""
+**Hoş Geldiniz.** Bu uygulama, yüklenen resmi vergi rehberlerini tarayarak sorularınıza **kaynaklı ve gerekçeli** yanıtlar üretir.
+""")
 
-user_query = st.text_input("Sorunuz:", key="query_input")
+user_query = st.text_input("Analiz edilecek konuyu yazın:", key="query_input", placeholder="Örn: Asgari ücret istisnası nasıl uygulanır?")
 
-if st.button("Danış 🔎", type="primary") and user_query:
-    with st.spinner("Dosyalar derinlemesine inceleniyor..."):
+if st.button("Analiz Et 🔎") and user_query:
+    with st.spinner("Mevzuat taranıyor, ilgili maddeler analiz ediliyor..."):
         # 1. Hızlı Arama
         query_vec = vectorizer.transform([user_query])
         scores = cosine_similarity(query_vec, tfidf_matrix).flatten()
-        
-        # GÜNCELLEME: İlk 3 değil, ilk 5 dosyayı alıyoruz!
-        top_indices = scores.argsort()[-5:][::-1]
+        top_indices = scores.argsort()[-5:][::-1] # En iyi 5 sonuç (Turbo Mod)
         
         found_docs = []
         context_data = ""
@@ -171,9 +180,7 @@ if st.button("Danış 🔎", type="primary") and user_query:
                 has_data = True
                 fname = filenames[idx].replace("arsiv_fileadmin_", "").replace(".pdf", "")
                 found_docs.append(f"📄 {fname}")
-                
-                # GÜNCELLEME: [:4000] yerine [:50000] yaptık! (Yaklaşık 30 sayfa okur)
-                # Artık metni kesmiyoruz, neredeyse tamamını yolluyoruz.
+                # Geniş okuma limiti (50.000 karakter)
                 doc_content = documents[idx][:50000] 
                 context_data += f"\n--- KAYNAK: {fname} ---\n{doc_content}\n"
 
@@ -182,13 +189,13 @@ if st.button("Danış 🔎", type="primary") and user_query:
             response = ask_advisor(user_query, context_data)
             
             # 3. Sonuç
-            st.success("✅ Cevap Hazır!")
+            st.success("✅ Analiz Tamamlandı")
             st.markdown(response)
             
-            with st.expander("📚 İncelenen Belgeler"):
+            with st.expander("📚 Referans Alınan Resmi Belgeler"):
                 for doc in found_docs: st.write(doc)
         else:
-            st.warning("⚠️ İlgili konu yüklenen dosyalarda bulunamadı. Lütfen sol menüden dosya listesini kontrol edin.")
+            st.warning("⚠️ Aradığınız konu, sisteme yüklenen mevcut rehberlerde tespit edilemedi.")
 
 st.markdown("---")
-st.caption("YASAL UYARI: Bu sistem bilgilendirme amaçlıdır. Nihai karar için YMM'ye danışınız.")
+st.caption("YASAL UYARI: Bu bir Ar-Ge (Araştırma Geliştirme) prototipidir. Üretilen bilgiler resmi tavsiye niteliği taşımaz.")
