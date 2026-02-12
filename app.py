@@ -1,7 +1,6 @@
 import streamlit as st
+import google.generativeai as genai
 import os
-import requests
-import json
 import pypdf
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -9,55 +8,61 @@ from sklearn.metrics.pairwise import cosine_similarity
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="Cebimde Müşavir", page_icon="🧾", layout="centered")
 
-# --- API ANAHTARI KONTROLÜ ---
-if "GOOGLE_API_KEY" in st.secrets:
-    api_key = st.secrets["GOOGLE_API_KEY"]
-else:
-    st.error("🚨 HATA: Streamlit Secrets ayarlarında 'GOOGLE_API_KEY' bulunamadı!")
+# --- API KURULUMU VE OTOMATİK MODEL SEÇİMİ ---
+try:
+    if "GOOGLE_API_KEY" in st.secrets:
+        api_key = st.secrets["GOOGLE_API_KEY"]
+        genai.configure(api_key=api_key)
+    else:
+        st.error("🚨 HATA: Secrets içinde GOOGLE_API_KEY bulunamadı.")
+        st.stop()
+
+    # SİHİRLİ KISIM: Google'a soruyoruz, hangi modeller açık?
+    available_models = []
+    for m in genai.list_models():
+        if 'generateContent' in m.supported_generation_methods:
+            available_models.append(m.name)
+    
+    # En iyiden başlayarak seçelim
+    target_models = ['models/gemini-1.5-flash', 'models/gemini-1.5-pro', 'models/gemini-pro']
+    active_model = None
+    
+    # Hedeflediklerimizden biri var mı?
+    for target in target_models:
+        if target in available_models:
+            active_model = target
+            break
+            
+    # Yoksa listenin başındakini al
+    if not active_model and available_models:
+        active_model = available_models[0]
+        
+    if not active_model:
+        st.error(f"🚨 HATA: Bu anahtar ile hiçbir metin modeline erişilemiyor. (Liste boş)")
+        st.stop()
+        
+    # Modeli Başlat
+    model = genai.GenerativeModel(active_model)
+
+except Exception as e:
+    st.error(f"🚨 API Bağlantı Hatası: {str(e)}")
     st.stop()
 
-# --- GEMINI'YE BAĞLANMA (DİREKT REST API) ---
-def call_google_api(model_name, prompt):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-    headers = {'Content-Type': 'application/json'}
-    data = {"contents": [{"parts": [{"text": prompt}]}]}
-    
-    response = requests.post(url, headers=headers, data=json.dumps(data))
-    return response
-
-def ask_google_smartly(prompt):
-    # 1. ÖNCE: En hızlı model (Gemini 1.5 Flash) dene
-    response = call_google_api("gemini-1.5-flash", prompt)
-    
-    if response.status_code == 200:
-        return response.json()['candidates'][0]['content']['parts'][0]['text']
-    
-    # 2. EĞER HATA VERİRSE (404 vs): Klasik model (Gemini Pro) dene
-    else:
-        # st.toast("Flash modeli yanıt vermedi, Pro modeline geçiliyor...") # Bilgi ver
-        response = call_google_api("gemini-pro", prompt)
-        
-        if response.status_code == 200:
-            return response.json()['candidates'][0]['content']['parts'][0]['text']
-        else:
-            return f"🚨 HATA: Hiçbir model çalışmadı. Google Hatası ({response.status_code}): {response.text}"
-
-# --- PDF OKUMA VE HAFIZA ---
+# --- PDF OKUMA SİSTEMİ ---
 @st.cache_resource(show_spinner=False)
 def create_knowledge_base():
     documents = []
     filenames = []
     pdf_files = [f for f in os.listdir('.') if f.endswith('.pdf')]
     
-    if not pdf_files:
-        return None, None, None, None
+    if not pdf_files: return None, None, None, None
 
     status_text = st.empty()
     progress_bar = st.progress(0)
     
     for i, pdf_file in enumerate(pdf_files):
         try:
-            status_text.text(f"📚 İşleniyor: {pdf_file}...")
+            status_text.text(f"📚 Okunuyor: {pdf_file}...")
             reader = pypdf.PdfReader(pdf_file)
             text = ""
             for page in reader.pages:
@@ -65,8 +70,7 @@ def create_knowledge_base():
                 if t: text += t + "\n"
             documents.append(text)
             filenames.append(pdf_file)
-        except:
-            pass
+        except: pass
         progress_bar.progress((i + 1) / len(pdf_files))
 
     status_text.empty()
@@ -79,37 +83,39 @@ def create_knowledge_base():
     else:
         return None, None, None, None
 
-# --- SİSTEM BAŞLANGICI ---
+# --- SİSTEM BAŞLATILIYOR ---
 with st.spinner("🚀 Sistem başlatılıyor..."):
     documents, filenames, vectorizer, tfidf_matrix = create_knowledge_base()
 
 if not documents:
-    st.error("⚠️ PDF dosyası bulunamadı!")
+    st.error("⚠️ Klasörde PDF bulunamadı! Lütfen GitHub'a dosya yükleyin.")
     st.stop()
 
 # --- MÜŞAVİR FONKSİYONU ---
-def ask_advisor(soru, context_text):
+def ask_advisor(soru, context):
     prompt = f"""
-    Sen uzman bir Mali Müşavirsin. Aşağıdaki resmi kaynakları kullanarak vatandaşa cevap ver.
+    Sen uzman bir Mali Müşavirsin. Sadece aşağıdaki kaynakları kullan.
     
     KAYNAKLAR:
-    {context_text}
+    {context}
     
-    SORU:
-    {soru}
-    
-    Cevabı Türkçe ver. Kaynaklarda bilgi yoksa "Bilgi yok" de.
+    SORU: {soru}
+    Cevabı Türkçe ver.
     """
-    return ask_google_smartly(prompt)
+    try:
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"🚨 HATA: {str(e)}"
 
 # --- ARAYÜZ ---
 st.title("🧾 Cebimde Müşavir AI")
-st.caption(f"📚 {len(filenames)} adet kaynak yüklendi.")
+st.success(f"✅ Bağlandı! Kullanılan Model: {active_model}") # Çalışan modeli ekranda göreceğiz
 
-user_query = st.text_input("Sorunuzu yazın:", placeholder="Örn: Kira geliri istisnası ne kadar?")
+user_query = st.text_input("Sorunuz:", placeholder="Örn: Kira istisnası ne kadar?")
 
 if st.button("Danış") and user_query:
-    with st.spinner("🔍 Müşavir düşünüyor..."):
+    with st.spinner("🔍 İnceleniyor..."):
         query_vec = vectorizer.transform([user_query])
         scores = cosine_similarity(query_vec, tfidf_matrix).flatten()
         top_indices = scores.argsort()[-3:][::-1]
@@ -126,15 +132,9 @@ if st.button("Danış") and user_query:
                 context_data += f"\n--- KAYNAK: {fname} ---\n{documents[idx][:4000]}...\n"
 
         if has_data:
-            ai_response = ask_advisor(user_query, context_data)
-            st.markdown("### 🤖 Cevap:")
-            if "🚨" in ai_response:
-                st.error(ai_response)
-            else:
-                st.info(ai_response)
-            
+            response = ask_advisor(user_query, context_data)
+            st.info(response)
             with st.expander("Kaynaklar"):
-                for doc in found_docs:
-                    st.write(doc)
+                for doc in found_docs: st.write(doc)
         else:
             st.warning("Bu konuda bilgi bulunamadı.")
